@@ -38,6 +38,17 @@ def _carregar_contorno_rn() -> dict:
         return json.load(f)
 
 
+def _mascara_fora_rn(contorno: dict) -> dict:
+    """Polígono do mundo com um furo no formato do RN — pintado por cima do
+    basemap, deixa visível apenas o recorte do estado."""
+    anel_rn = contorno["features"][0]["geometry"]["coordinates"][0]
+    anel_mundo = [[-179, -85], [179, -85], [179, 85], [-179, 85], [-179, -85]]
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [anel_mundo, anel_rn]},
+    }
+
+
 def build_map(df_conjuntos: pd.DataFrame, df_usinas: pd.DataFrame | None = None, mostrar_usinas: bool = False) -> folium.Map:
     m = folium.Map(
         location=CENTRO_RN,
@@ -49,8 +60,20 @@ def build_map(df_conjuntos: pd.DataFrame, df_usinas: pd.DataFrame | None = None,
         zoom_control=True,
     )
 
+    contorno = _carregar_contorno_rn()
+
     folium.GeoJson(
-        _carregar_contorno_rn(),
+        _mascara_fora_rn(contorno),
+        style_function=lambda _: {
+            "fillColor": "#ffffff",
+            "color": "transparent",
+            "fillOpacity": 1,
+        },
+        interactive=False,
+    ).add_to(m)
+
+    folium.GeoJson(
+        contorno,
         name="Rio Grande do Norte",
         style_function=lambda _: {
             "fillColor": "transparent",
