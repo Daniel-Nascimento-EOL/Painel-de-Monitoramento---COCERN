@@ -6,8 +6,9 @@ import plotly.graph_objects as go
 CENTRO_RN = {"lat": -5.6, "lon": -36.4}
 ZOOM_INICIAL = 7.2
 
-_COR_CONJUNTOS = "#1f77b4"
-_COR_USINAS = "#ff7f0e"
+_COR_CONJUNTOS = "#3b5166"
+_COR_USINAS = "#c17a4f"
+_FONTE = "Georgia, 'Times New Roman', serif"
 
 
 def _tamanho_marcador(qtd_usinas: pd.Series) -> pd.Series:
@@ -22,7 +23,7 @@ def build_map(df_conjuntos: pd.DataFrame, df_usinas: pd.DataFrame | None = None,
             lat=df_conjuntos["latitude"],
             lon=df_conjuntos["longitude"],
             mode="markers",
-            marker=dict(size=_tamanho_marcador(df_conjuntos["qtd_usinas"]), color=_COR_CONJUNTOS, opacity=0.85),
+            marker=dict(size=_tamanho_marcador(df_conjuntos["qtd_usinas"]), color=_COR_CONJUNTOS, opacity=0.88),
             text=df_conjuntos["conjunto"],
             customdata=df_conjuntos[["municipios", "qtd_usinas"]],
             hovertemplate=(
@@ -41,7 +42,7 @@ def build_map(df_conjuntos: pd.DataFrame, df_usinas: pd.DataFrame | None = None,
                 lat=df_usinas["latitude"],
                 lon=df_usinas["longitude"],
                 mode="markers",
-                marker=dict(size=8, color=_COR_USINAS, opacity=0.8),
+                marker=dict(size=7, color=_COR_USINAS, opacity=0.85),
                 text=df_usinas["usina"],
                 customdata=df_usinas[["conjunto", "ceg", "municipios"]],
                 hovertemplate=(
@@ -56,9 +57,20 @@ def build_map(df_conjuntos: pd.DataFrame, df_usinas: pd.DataFrame | None = None,
         )
 
     fig.update_layout(
-        mapbox=dict(style="open-street-map", center=CENTRO_RN, zoom=ZOOM_INICIAL),
+        mapbox=dict(style="carto-positron", center=CENTRO_RN, zoom=ZOOM_INICIAL),
         margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=0.01, xanchor="left", x=0.01, bgcolor="rgba(255,255,255,0.7)"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=0.02,
+            xanchor="left",
+            x=0.02,
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#e5e7eb",
+            borderwidth=1,
+            font=dict(size=11, color="#1f2933"),
+        ),
+        hoverlabel=dict(bgcolor="white", bordercolor="#3b5166", font=dict(family=_FONTE, size=12, color="#1f2933")),
         height=650,
     )
     return fig

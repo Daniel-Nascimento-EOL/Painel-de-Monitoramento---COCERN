@@ -18,11 +18,21 @@ def render() -> None:
     df_conjuntos = load_conjuntos()
     df_usinas = load_usinas()
 
-    st.sidebar.header("Filtros")
-    municipios_disponiveis = _municipios_unicos(df_conjuntos)
-    municipios_selecionados = st.sidebar.multiselect("Município", municipios_disponiveis)
-    busca = st.sidebar.text_input("Buscar conjunto")
-    mostrar_usinas = st.sidebar.checkbox("Mostrar usinas individuais", value=False)
+    st.markdown("## Mapa de Conjuntos Eólicos — Rio Grande do Norte")
+    st.caption(
+        "Conjuntos eólicos Tipo II-C localizados no RN · "
+        "Fontes: ONS SINMAPS, ONS (relação conjunto–usina), ANEEL SIGA"
+    )
+    st.divider()
+
+    st.sidebar.markdown("#### Filtros")
+    with st.sidebar.container(border=True):
+        municipios_disponiveis = _municipios_unicos(df_conjuntos)
+        municipios_selecionados = st.multiselect(
+            "Município", municipios_disponiveis, placeholder="Todos"
+        )
+        busca = st.text_input("Buscar conjunto", placeholder="ex.: Acauã")
+        mostrar_usinas = st.toggle("Mostrar usinas individuais", value=False)
 
     filtrado = df_conjuntos
     if municipios_selecionados:
@@ -36,15 +46,16 @@ def render() -> None:
 
     usinas_filtradas = df_usinas[df_usinas["chave"].isin(filtrado["chave"])]
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Conjuntos", len(filtrado))
-    col2.metric("Usinas", int(filtrado["qtd_usinas"].sum()))
-    col3.metric("Municípios", len(_municipios_unicos(filtrado)))
+    st.sidebar.divider()
+    c1, c2, c3 = st.sidebar.columns(3)
+    c1.metric("Conjuntos", len(filtrado))
+    c2.metric("Usinas", int(filtrado["qtd_usinas"].sum()))
+    c3.metric("Municípios", len(_municipios_unicos(filtrado)))
 
     fig = build_map(filtrado, usinas_filtradas, mostrar_usinas=mostrar_usinas)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": "hover"})
 
-    with st.expander(f"Conjuntos listados ({len(filtrado)})"):
+    with st.expander(f"Tabela de conjuntos ({len(filtrado)})"):
         st.dataframe(
             filtrado[["conjunto", "municipios", "qtd_usinas", "observacao"]],
             width="stretch",
