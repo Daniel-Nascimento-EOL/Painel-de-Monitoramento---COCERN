@@ -42,11 +42,11 @@ def render() -> None:
     col3.metric("Municípios", len(_municipios_unicos(filtrado)))
 
     fig = build_map(filtrado, usinas_filtradas, mostrar_usinas=mostrar_usinas)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     with st.expander(f"Conjuntos listados ({len(filtrado)})"):
         st.dataframe(
             filtrado[["conjunto", "municipios", "qtd_usinas", "observacao"]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
