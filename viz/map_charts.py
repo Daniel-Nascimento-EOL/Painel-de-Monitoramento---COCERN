@@ -9,7 +9,8 @@ import pandas as pd
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 
 CENTRO_RN = (-5.6, -36.4)
-_BOUNDS_RN = [[-7.35, -39.0], [-4.45, -34.5]]
+# Bbox real do RN (data/rn_estado.geojson) + margem mínima — pan quase travado no estado.
+_BOUNDS_RN = [[-7.10, -38.72], [-4.70, -34.83]]
 
 _COR_CONJUNTOS = "#3b5166"
 _COR_USINAS = "#c17a4f"
