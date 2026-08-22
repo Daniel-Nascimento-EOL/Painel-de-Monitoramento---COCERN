@@ -42,6 +42,15 @@ hr {
 [data-testid="stMetricValue"] {
     font-size: 1.4rem;
 }
+
+@media (max-width: 640px) {
+    [data-testid="stSidebar"] [data-testid="stMetricValue"] {
+        font-size: 1.1rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stMetricLabel"] {
+        font-size: 0.7rem;
+    }
+}
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
