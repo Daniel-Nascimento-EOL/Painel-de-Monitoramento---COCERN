@@ -58,6 +58,10 @@ def build_map(df_conjuntos: pd.DataFrame, df_usinas: pd.DataFrame | None = None,
         tiles="CartoDB positron",
         control_scale=True,
         max_bounds=True,
+        min_lat=_BOUNDS_RN[0][0],
+        max_lat=_BOUNDS_RN[1][0],
+        min_lon=_BOUNDS_RN[0][1],
+        max_lon=_BOUNDS_RN[1][1],
         zoom_control=True,
     )
 
