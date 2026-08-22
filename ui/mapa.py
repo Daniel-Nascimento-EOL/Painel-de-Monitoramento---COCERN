@@ -1,6 +1,7 @@
 """Página do mapa de localização dos conjuntos eólicos do RN."""
 
 import streamlit as st
+from streamlit_folium import st_folium
 
 from core.data_loader import load_conjuntos, load_usinas
 from viz.map_charts import build_map
@@ -52,8 +53,8 @@ def render() -> None:
     c2.metric("Usinas", int(filtrado["qtd_usinas"].sum()))
     c3.metric("Municípios", len(_municipios_unicos(filtrado)))
 
-    fig = build_map(filtrado, usinas_filtradas, mostrar_usinas=mostrar_usinas)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": "hover"})
+    mapa_fig = build_map(filtrado, usinas_filtradas, mostrar_usinas=mostrar_usinas)
+    st_folium(mapa_fig, height=650, use_container_width=True, returned_objects=[])
 
     with st.expander(f"Tabela de conjuntos ({len(filtrado)})"):
         st.dataframe(
