@@ -5,6 +5,7 @@ from pathlib import Path
 
 import folium
 import pandas as pd
+from shapely.geometry import shape
 
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 
@@ -39,10 +40,16 @@ def _carregar_contorno_rn() -> dict:
         return json.load(f)
 
 
+_MARGEM_MASCARA_GRAUS = 0.06  # ~6 km — evita cortar rótulos do basemap (nomes de município) bem em cima da fronteira
+
+
 def _mascara_fora_rn(contorno: dict) -> dict:
-    """Polígono do mundo com um furo no formato do RN — pintado por cima do
-    basemap, deixa visível apenas o recorte do estado."""
-    anel_rn = contorno["features"][0]["geometry"]["coordinates"][0]
+    """Polígono do mundo com um furo no formato do RN (com pequena folga) —
+    pintado por cima do basemap, deixa visível apenas o recorte do estado
+    sem cortar rótulos de cidades litorâneas bem na linha da fronteira."""
+    poligono_rn = shape(contorno["features"][0]["geometry"])
+    poligono_rn_com_folga = poligono_rn.buffer(_MARGEM_MASCARA_GRAUS)
+    anel_rn = list(poligono_rn_com_folga.exterior.coords)
     anel_mundo = [[-179, -85], [179, -85], [179, 85], [-179, 85], [-179, -85]]
     return {
         "type": "Feature",
