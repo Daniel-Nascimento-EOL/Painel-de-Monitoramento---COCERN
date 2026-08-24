@@ -1,6 +1,6 @@
 import streamlit as st
 
-from ui import mapa
+from ui import energia_frustrada, mapa
 
 st.set_page_config(
     page_title="Constrained-off — Conjuntos Eólicos RN",
@@ -57,6 +57,13 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 st.sidebar.title("Painel COCERN")
 st.sidebar.caption("Monitoramento de constrained-off — Conjuntos Eólicos do RN")
+
+pagina = st.sidebar.radio(
+    "Navegação", ["Mapa", "Energia Frustrada"], label_visibility="collapsed"
+)
 st.sidebar.divider()
 
-mapa.render()
+if pagina == "Mapa":
+    mapa.render()
+else:
+    energia_frustrada.render()
