@@ -23,7 +23,6 @@ _COLUNAS_CONJUNTOS = {
     "Ajustamento Operativo": "ajustamento_operativo",
     "Logo - Agente Proprietário": "logo_proprietario",
     "Logo - Agente Operador": "logo_operador",
-    "Observação": "observacao",
 }
 
 _COLUNAS_USINAS = {
