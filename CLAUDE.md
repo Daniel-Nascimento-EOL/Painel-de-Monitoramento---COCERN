@@ -1,7 +1,7 @@
 # Painel de Monitoramento de Constrained-off — Conjuntos Eólicos do RN
 
 > Trabalho acadêmico de mestrado. Guia de referência do projeto para o Claude Code.
-> Última atualização: 2026-08-22.
+> Última atualização: 2026-08-24.
 
 ---
 
@@ -9,15 +9,19 @@
 
 Painel web (Streamlit) de monitoramento de **constrained-off** (corte de
 geração por restrição operativa) dos conjuntos eólicos do Rio Grande do
-Norte. Primeira entrega (concluída): mapa de localização interativo. Próximas
-fases dependem de dados que um colega de trabalho do usuário (Daniel
-Nascimento) ainda vai enviar.
+Norte. Duas entregas concluídas: (1) mapa de localização interativo, com
+subestações/cidades fixas, linhas de conexão e ficha de detalhe por
+conjunto; (2) motor de **Energia Frustrada** com download automático dos
+dados abertos do ONS e cálculo das 5 metodologias definidas pelo usuário.
+Próximas fases (ficha de detalhe de subestação com documentos vinculados,
+linhas de transmissão coloridas por tensão) dependem de dados de nível de
+tensão (kV) por subestação, ainda não recebidos.
 
-- **Stack:** Python 3.x / Streamlit / Folium (mapa) / Plotly (gráficos
-  futuros) / Pandas / Shapely
+- **Stack:** Python 3.13 / Streamlit / Folium (mapa) / Plotly (gráficos) /
+  Pandas / NumPy / Shapely / Pillow (ícones) / Requests (download ONS/CCEE)
 - **Repositório:** https://github.com/Daniel-Nascimento-EOL/Painel-de-Monitoramento---COCERN
   (privado, branch `main`)
-- **Comando de execução:** `streamlit run app.py` (venv em `.venv/`)
+- **Comando de execução:** `streamlit run app.py` (venv em `.venv/`, Python 3.13)
 
 ---
 
@@ -26,34 +30,86 @@ Nascimento) ainda vai enviar.
 ```
 streamlit run app.py
         ↓
-app.py              ── page_config, CSS global (tema minimalista), monta sidebar
-  └── ui/mapa.py     ── página do mapa: filtros (sidebar), métricas, render do mapa
-        ├── core/data_loader.py   ── carrega/normaliza abas do Excel (@st.cache_data)
-        └── viz/map_charts.py     ── constrói o folium.Map (ícones, máscara, bounds)
+app.py                        ── page_config, CSS global, roteador (radio na sidebar: Mapa | Energia Frustrada)
+  ├── ui/mapa.py               ── página do mapa: filtros, métricas, render do mapa
+  │     ├── core/data_loader.py    ── carrega/normaliza Excel (@st.cache_data)
+  │     └── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas)
+  └── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia)
+        ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
+        └── core/ccee_pld.py       ── download CCEE (PLD Nordeste), com fallback gracioso
 
 data/
-  ├── localizacao_conjuntos_ons_aneel.xlsx   ── fonte: planilha ONS/ANEEL (54 conjuntos, 309 usinas)
-  └── rn_estado.geojson                       ── contorno do RN (IBGE, baixado uma vez)
+  ├── localizacao_conjuntos_ons_aneel.xlsx   ── conjuntos: ONS/ANEEL + id_ons, capacidade, ponto de
+  │                                              conexão, agentes proprietário/operador (+ logos)
+  ├── bays.xlsx                                ── subestações do RN/PB (agente operador, lat/long) e
+  │                                              cidades de referência
+  ├── rn_estado.geojson                        ── contorno do RN (IBGE, baixado uma vez)
+  └── icons/
+        ├── logo_aero.jpg                      ── ícone de turbina (marcador de conjunto)
+        └── logo_se.jpeg                        ── ícone de subestação (marcador de bay)
 
 docs/
-  └── fontes_dados_abertos.md   ── levantamento de datasets ONS/ANEEL/COSERN úteis pra próximas fases
+  └── fontes_dados_abertos.md   ── levantamento de datasets ONS/ANEEL/COSERN
 ```
 
 ---
 
 ## 2. Dados
 
-Planilha `data/localizacao_conjuntos_ons_aneel.xlsx`, 3 abas:
-- **Localizacao** (54 linhas): conjunto, lat/long, município(s), qtd. usinas.
-- **Detalhamento** (309 linhas): usina individual, **CEG** (chave ANEEL —
-  útil pra cruzar com potência/geração no futuro), lat/long, município.
+### 2.1 Conjuntos (`data/localizacao_conjuntos_ons_aneel.xlsx`)
+
+3 abas:
+- **Localizacao** (54 linhas): conjunto, `id_ons` (chave de junção com o
+  dataset de constrained-off do ONS), `Localização (lat, long)` (string
+  combinada `"lat, long"`, parseada em `core/data_loader.py`), município(s),
+  capacidade instalada (`"109,20 MW"` — parser tolera espaços soltos tipo
+  `"63 ,00MW"`), qtd. usinas/aerogeradores, ponto de conexão, agente
+  proprietário/operador (+ URLs de logo), ajustamento operativo.
+- **Detalhamento** (309 linhas): usina individual, **CEG**, lat/long,
+  município (colunas separadas, ao contrário de Localizacao).
 - **Fontes e metodologia**: proveniência (ONS SINMAPS, ONS conjunto↔usina,
   ANEEL SIGA).
 
-**Gotcha de join**: os nomes de conjunto NÃO batem direto entre as duas
-abas — `"Conjunto Eólico Acauã"` (Localizacao) vs `"CONJ. ACAUÃ"`
-(Detalhamento). `core/data_loader.py::_chave_conjunto()` normaliza (strip de
-prefixo + uppercase) pra juntar. Validado: 54/54 batem sem sobra.
+**Gotcha de join conjunto↔usina**: os nomes NÃO batem direto —
+`"Conjunto Eólico Acauã"` (Localizacao) vs `"CONJ. ACAUÃ"` (Detalhamento).
+`core/data_loader.py::_chave_conjunto()` normaliza (strip de prefixo +
+uppercase). Validado: 54/54 sem sobra.
+
+### 2.2 Subestações e cidades (`data/bays.xlsx`)
+
+- **Bays** (15 linhas, RN + PB): agente operador, subestação, lat/long.
+  Junta com `Localizacao["Ponto de conexão"]` (ex.: `"SE Açu II"`) via
+  `core/data_loader.py::_chave_subestacao()` (remove prefixo `SE `,
+  uppercase). Validado: 15/15 sem sobra.
+- **Cidades_RN** (21 linhas): cidades de referência pra ficarem fixas no
+  mapa (sem interação, só rótulo).
+
+### 2.3 Dataset ONS de constrained-off (ao vivo)
+
+`core/ons_coff.py::baixar_mes_rn()` baixa direto do S3 público do ONS:
+`https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_{ano}_{mes:02d}.csv`
+(CSV `;`-delimitado, um arquivo por mês, desde 2021-01, atualizado 2x/dia
+pelo ONS às 12h e 19h). Filtra `id_estado == "RN"` logo após o download
+(arquivo original cobre o Brasil todo). Cache `@st.cache_data(ttl=6h)`.
+
+`id_ons` no CSV do ONS é por "usina" (mas cada conjunto do RN é reportado
+como uma usina agregada — 54 usinas únicas no dataset = 54 conjuntos),
+e bate 1:1 com `Localizacao["id_ons"]`.
+
+### 2.4 PLD horário CCEE (ao vivo, com fallback)
+
+`core/ccee_pld.py::baixar_pld_nordeste()` tenta baixar o PLD horário do
+subsistema Nordeste (`https://dadosabertos.ccee.org.br/dataset/pld_horario`).
+**Risco conhecido**: o WAF da CCEE bloqueou toda requisição feita a partir
+do ambiente de desenvolvimento (403 "acesso bloqueado — política de
+segurança CCEE"), diferente do S3 do ONS que funciona normalmente. Pode
+funcionar no ambiente de deploy real — por isso a busca é tentada mesmo
+assim, mas com **fallback gracioso**: se falhar, `ui/energia_frustrada.py`
+mostra a energia frustrada em MWh normalmente e só omite as colunas de
+Impacto Financeiro (R$), com aviso claro ao usuário. **Se o bloqueio
+persistir em produção**, cogitar: (a) pedir pro usuário confirmar se tem
+outro acesso (chave de API, arquivo manual), ou (b) aceitar o painel só com
+MWh por enquanto.
 
 ---
 
@@ -61,97 +117,118 @@ prefixo + uppercase) pra juntar. Validado: 54/54 batem sem sobra.
 
 Trocado de Plotly pra **Folium/Leaflet** porque o usuário pediu ícone
 customizado de aerogerador nos marcadores — Plotly `Scattermapbox` só
-suporta símbolos customizados com estilo Mapbox GL pago/tokenizado (sem
-ícone de turbina pronto no set deles). Folium usa `DivIcon` com SVG inline,
-sem token.
+suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
 
-- **Ícone**: `viz/map_charts.py::_icone_turbina()` — SVG inline (torre +
-  rotor de 3 pás), cor por tipo de marcador.
-- **Mapa mostra só o RN**: polígono do mundo inteiro com um "furo" no
-  formato do RN (`_mascara_fora_rn()`), pintado branco por cima do basemap
-  — não é só limitar zoom/pan, é recorte visual mesmo.
-- **Gotcha do buffer**: a máscara encostando exatamente na fronteira cortava
-  rótulos de município do basemap perto da linha (ex.: "Maxaranguape"
-  virava "Maxaran"). Fix: `shapely.buffer(0.06)` no polígono do RN antes de
-  usar como furo — dá ~6km de folga. O contorno exato (sem buffer) continua
-  desenhado por cima como linha fina.
-- **Gotcha do `max_bounds`**: `folium.Map(max_bounds=True)` **sozinho não
-  faz nada** — sem passar `min_lat/max_lat/min_lon/max_lon` explícitos, o
-  Folium usa o default (bounds do mundo inteiro), e o mapa fica livre pra
-  arrastar mesmo com a flag True. Bounds do RN estão em `_BOUNDS_RN` em
-  `viz/map_charts.py`.
-- Basemap: `CartoDB positron` (sem token, cinza claro, minimalista).
-- Render em `ui/mapa.py` via `streamlit_folium.st_folium`.
+- **Ícones tingidos**: `viz/map_charts.py::_tingir_icone_array()` — os
+  ícones enviados pelo usuário (`data/icons/logo_aero.jpg`,
+  `logo_se.jpeg`) vêm como linha preta sobre fundo quase branco. A função
+  usa Pillow/NumPy pra tornar o fundo transparente (rampa de alpha por
+  luminosidade) e tingir os traços na paleta do projeto, cacheado com
+  `@st.cache_resource`. **Gotcha do folium.CustomIcon**: a versão instalada
+  usa `folium.utilities.image_to_url` (não `branca.utilities`), que só
+  aceita path/URL string ou `numpy.ndarray` — **não aceita file-like
+  (BytesIO)**. Por isso a função retorna um array RGBA `uint8`, não bytes
+  de PNG.
+- **Subestações e cidades ficam sempre visíveis** (não passam pelos
+  filtros da sidebar) — pedido explícito do usuário via áudio, pra dar
+  noção da escassez de subestações de transmissão no RN.
+- **Linhas de conexão** conjunto→subestação são desenhadas sempre (fixas,
+  não só ao clicar/selecionar), estilo neutro, sem diferenciação por nível
+  de tensão ainda (falta dado de kV por subestação — próxima melhoria).
+- **Ficha de detalhe**: popup do marcador de conjunto expandido com agente
+  proprietário/operador (+ logo via `<img src="URL">`, linkado externo —
+  não baixamos/hospedamos essas imagens), ponto de conexão, capacidade
+  instalada, qtd. aerogeradores, ajustamento operativo.
+- **Mapa mostra só o RN**: polígono do mundo com um "furo" no formato do RN
+  (`_mascara_fora_rn()`), pintado branco por cima do basemap.
+- **Gotcha do buffer**: `shapely.buffer(0.06)` no polígono do RN antes de
+  usar como furo — ~6km de folga pra não cortar rótulos de município do
+  basemap perto da fronteira.
+- **Gotcha do `max_bounds`**: precisa passar `min_lat/max_lat/min_lon/max_lon`
+  explícitos — sozinho não trava o pan. Bounds em `_BOUNDS_RN`.
+- Basemap: `CartoDB positron`. Render via `streamlit_folium.st_folium`.
 
 ---
 
-## 4. Design
+## 4. Energia Frustrada — metodologias
+
+As 5 fórmulas (+ 2 gerações de referência calculadas auxiliares) foram
+extraídas diretamente das fórmulas Excel de uma planilha de referência do
+usuário (`openpyxl`, coluna a coluna) e reimplementadas vetorizado em
+`core/ons_coff.py::calcular_metodologias()`. **Validado linha a linha**
+contra os valores calculados em cache da planilha original (80.352 linhas,
+RN, julho/2026): 99,99% de correspondência exata; a fração residual
+(~0,01–0,02% das linhas) são empates de ponto flutuante bem em cima da
+fronteira da tolerância de 5 MW/5%, onde o motor de fórmulas do Excel não
+é perfeitamente reprodutível em IEEE754 puro — ver comentário no código.
+
+**Bug de tradução já corrigido**: a Metodologia 5 (`energia_frustrada_5`)
+**não tem** a guarda "zera se G_Ref_Final Calculada < geração" que a
+Metodologia 4 tem — são assimétricas na planilha original. Não "arrumar"
+isso achando que é inconsistência; é assim mesmo.
+
+Colunas resultantes: `energia_frustrada_1..5`, `g_ref_calculada_1/2`.
+Impacto financeiro = `energia_frustrada_N * pld_horario` (só disponível
+quando o PLD da CCEE carrega — ver §2.4).
+
+---
+
+## 5. Design
 
 Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
 "genérico" do Streamlit e pediu algo sério/minimalista:
 - Tema neutro em `.streamlit/config.toml` (paleta slate `#3b5166` +
-  terracota `#c17a4f`, sem cores vivas de dashboard).
+  terracota `#c17a4f`, sem cores vivas de dashboard). Subestação usa um
+  terceiro tom neutro (`#5b6b74`) pra não colidir com usinas individuais.
 - Tipografia serif (Georgia) nos headers, injetada via CSS em `app.py`.
 - `#MainMenu`/`footer` do Streamlit escondidos.
-- Sidebar colapsável é nativa do Streamlit (não precisa implementar) —
-  filtros agrupados em container com borda, resumo compacto.
-- CSS responsivo básico pras métricas da sidebar não espremerem no mobile
-  (`@media max-width: 640px` em `app.py`).
+- CSS responsivo básico pras métricas da sidebar não espremerem no mobile.
 
 ---
 
-## 5. Git / Deploy
+## 6. Git / Deploy
 
-- Identidade git é **local a este repo** (não a global do usuário):
-  `user.name "Daniel Nascimento"` / `user.email marcos.danielns@outlook.com`.
+- Identidade git é **local a este repo**: `user.name "Daniel Nascimento"` /
+  `user.email marcos.danielns@outlook.com`.
 - Push feito via `gh` CLI logado como conta **Kevinael** (colaborador
   adicionado pelo Daniel, dono do repo).
-- **Streamlit Community Cloud**: deploy travado (botão "Deploy" fica
-  desabilitado sem erro visível) porque o GitHub App do Streamlit não tem
-  acesso liberado ao repo privado. Fix pendente: Daniel precisa ir em
-  https://github.com/settings/installations (logado como
-  `Daniel-Nascimento-EOL`) → app **Streamlit** → Configure → liberar acesso
-  ao repo `Painel-de-Monitoramento---COCERN`. Alternativa rápida: tornar o
-  repo público temporariamente.
+- **Streamlit Community Cloud**: deploy travado (GitHub App do Streamlit
+  sem acesso ao repo privado). Fix pendente: Daniel precisa liberar acesso
+  em https://github.com/settings/installations → app **Streamlit** →
+  Configure → repo `Painel-de-Monitoramento---COCERN`.
+- **Ambiente local Windows**: o Python 3.12 usado originalmente pro `.venv`
+  foi desinstalado da máquina em algum momento (venv órfão, "No Python at
+  ..."). Recriado com `py -3.13 -m venv .venv`. Se o `.venv` quebrar de
+  novo com erro parecido, checar `py -0p` pras versões disponíveis antes
+  de tentar consertar o venv antigo.
 
 ---
 
-## 6. Roadmap — Fase 2 (aguardando planilha do Daniel)
+## 7. Roadmap — pendências
 
-Levantado via 3 áudios do WhatsApp transcritos em 2026-08-22 (faster-whisper
-local, modelo `small`). **Nada disso foi implementado ainda** — decisão do
-usuário foi esperar a planilha que o Daniel manda numa segunda-feira antes
-de começar.
+Itens do áudio de 2026-08-22 ainda não resolvidos (ficha de detalhe de
+conjunto, energia frustrada e linhas fixas conjunto↔subestação **já
+implementados** — ver §3 e §4):
 
-1. **Interação no mapa**: clique no marcador abre ficha de detalhe (não só
-   hover/tooltip). Alternativa: dropdown de instalação com zoom automático.
-2. **Ficha de detalhe por conjunto**: logo do agente proprietário + logo do
-   agente operador (podem ser empresas diferentes), documentos vinculados
-   (ajuste operativo, instrução de operação — PDFs), capacidade instalada,
-   qtd. aerogeradores.
-3. **Energia frustrada**: Daniel já implementou 4 metodologias de cálculo (a
-   atual dos relatórios + 3 alternativas). Vem numa planilha preenchida
-   junto com agente proprietário/operador e links de logo.
-4. **Ponto de conexão / rede de transmissão**: cada conjunto conecta numa
-   subestação via linha — desenhar linha conjunto↔subestação no mapa,
-   colorida por nível de tensão (138kV preto, 230kV verde, 500kV vermelho).
-   Subestação também clicável (agente dono, nível de tensão). Exemplos RN
-   citados: João Câmara, Açu II, Açu III, SE Paraíso, SE Touros (nomes
-   podem ter erro de transcrição do áudio).
+1. **Linhas de conexão coloridas por nível de tensão** (138kV preto, 230kV
+   verde, 500kV vermelho) — falta dado de kV por subestação/linha.
+2. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
+   operativo, instrução de operação em PDF) — só temos o código do
+   ajustamento operativo (texto), não os PDFs.
+3. **Impacto financeiro robusto**: depende do PLD da CCEE carregar de
+   verdade em produção (ver risco em §2.4). Se continuar bloqueado,
+   conversar com o usuário sobre alternativa de acesso.
 
-Fontes de dados abertos já levantadas pra essas fases (ONS constrained-off,
-ANEEL SIGA/potência, COSERN) estão documentadas em
-`docs/fontes_dados_abertos.md`.
-
-**Quando a planilha do Daniel chegar**: reler este roadmap, cruzar com o
-arquivo novo, propor plano de implementação (provável ordem: ficha de
-detalhe + energia frustrada primeiro, rede de transmissão depois por
-precisar de mais dados de subestação).
+Fontes de dados abertos levantadas (ONS constrained-off, ANEEL SIGA,
+COSERN) em `docs/fontes_dados_abertos.md`.
 
 ---
 
-## 7. Convenções
+## 8. Convenções
 
 - Idioma: português técnico formal (mensagens, commits, documentação).
-- Commits: sem `Co-Authored-By`, formato `tipo: descrição curta`.
-- Ambiente isolado em `.venv/` (gitignored), `requirements.txt` versionado.
+- Commits: sem `Co-Authored-By`, formato `tipo: descrição curta`, **um
+  commit por etapa** (dados/loader → mapa/UI → motor de cálculo →
+  navegação), não um commit gigante no final.
+- Ambiente isolado em `.venv/` (gitignored, Python 3.13), `requirements.txt`
+  versionado.
