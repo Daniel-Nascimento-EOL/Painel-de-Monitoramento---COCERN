@@ -100,10 +100,36 @@ def _mascara_fora_rn(contorno: dict) -> dict:
     }
 
 
-def _linha_logo(rotulo: str, url) -> str:
-    if pd.isna(url) or not str(url).strip():
-        return f"{rotulo}<br>"
-    return f'{rotulo} <img src="{url}" style="height:18px; vertical-align:middle;"><br>'
+_FONTE_TEXTO = "-apple-system, 'Segoe UI', Arial, sans-serif"
+
+
+def _linha_agente(rotulo: str, nome, url_logo, cor_avatar: str) -> str:
+    """Linha com avatar (logo da empresa, ou inicial do nome se não houver
+    logo) + rótulo pequeno em caixa alta + nome do agente."""
+    nome = "" if pd.isna(nome) else str(nome).strip()
+    if not pd.isna(url_logo) and str(url_logo).strip():
+        avatar = (
+            '<div style="width:34px; height:34px; flex-shrink:0; border-radius:8px; '
+            'background:#f4f5f7; display:flex; align-items:center; justify-content:center; '
+            'overflow:hidden;">'
+            f'<img src="{url_logo}" style="max-width:28px; max-height:28px; object-fit:contain;">'
+            "</div>"
+        )
+    else:
+        inicial = (nome[:1] if nome else "?").upper()
+        avatar = (
+            f'<div style="width:34px; height:34px; flex-shrink:0; border-radius:8px; background:{cor_avatar}; '
+            'display:flex; align-items:center; justify-content:center; color:#fff; '
+            f'font-size:14px; font-weight:600;">{inicial}</div>'
+        )
+    return (
+        '<div style="display:flex; align-items:center; gap:9px; margin-bottom:7px;">'
+        f"{avatar}"
+        '<div style="line-height:1.3;">'
+        f'<div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#9aa5b1;">{rotulo}</div>'
+        f'<div style="font-size:12.5px; color:#2a3542; font-weight:500;">{nome or "—"}</div>'
+        "</div></div>"
+    )
 
 
 def build_map(
@@ -198,14 +224,23 @@ def build_map(
     for _, row in df_conjuntos.iterrows():
         tamanho = int(min(16 + row["qtd_usinas"] * 1.1, 34))
         popup_html = (
-            f"<b>{row['conjunto']}</b><br>"
-            f"Município(s): {row['municipios']}<br>"
-            f"Qtd. usinas: {row['qtd_usinas']} · Qtd. aerogeradores: {row['qtd_aerogeradores']}<br>"
-            f"Capacidade instalada: {row['capacidade_mw']:.2f} MW<br>"
-            f"Ponto de conexão: {row['ponto_conexao']}<br>"
-            f"Ajustamento Operativo: {row['ajustamento_operativo']}<br>"
-            + _linha_logo("Agente Proprietário: " + str(row["agente_proprietario"]), row["logo_proprietario"])
-            + _linha_logo("Agente Operador: " + str(row["agente_operador"]), row["logo_operador"])
+            '<div style="min-width:236px; max-width:270px;">'
+            f'<div style="font-family: Georgia, \'Times New Roman\', serif; font-size:15px; '
+            f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
+            f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:#5b6570; line-height:1.55; '
+            'margin-bottom:9px;">'
+            f'{row["municipios"]}<br>'
+            f'{row["qtd_usinas"]} usinas · {row["qtd_aerogeradores"]} aerogeradores · '
+            f'{row["capacidade_mw"]:.2f} MW'
+            "</div>"
+            '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
+            + _linha_agente("Agente Proprietário", row["agente_proprietario"], row["logo_proprietario"], _COR_CONJUNTOS)
+            + _linha_agente("Agente Operador", row["agente_operador"], row["logo_operador"], _COR_SUBESTACAO)
+            + '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
+            f'<div style="font-family:{_FONTE_TEXTO}; font-size:11px; color:#8b939c; line-height:1.6;">'
+            f'Ponto de conexão: {row["ponto_conexao"]}<br>'
+            f'Ajustamento Operativo: {row["ajustamento_operativo"]}'
+            "</div></div>"
         )
         folium.Marker(
             location=[row["latitude"], row["longitude"]],
