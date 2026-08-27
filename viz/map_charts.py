@@ -1,6 +1,7 @@
 """Construção do mapa (Folium/Leaflet) dos conjuntos eólicos do RN."""
 
 import json
+import re
 from pathlib import Path
 
 import folium
@@ -23,6 +24,15 @@ _COR_SUBESTACAO = "#5b6b74"
 _COR_CONTORNO = "#9aa5b1"
 _COR_CIDADE = "#8a8f98"
 _COR_LINHA_CONEXAO = "#9aa5b1"
+
+# Ícone do marcador de conjunto — tamanho fixo (sem proporcionalidade à qtd. de usinas).
+_TAMANHO_ICONE_CONJUNTO = 24
+
+
+def _nome_subestacao(nome: str) -> str:
+    """Garante o prefixo 'SE ' no nome da subestação (ex.: 'Açu II' -> 'SE Açu II')."""
+    nome = str(nome).strip()
+    return nome if re.match(r"^SE\s+", nome, flags=re.IGNORECASE) else f"SE {nome}"
 
 
 @st.cache_resource
@@ -200,11 +210,12 @@ def build_map(
     if df_bays is not None and not df_bays.empty:
         for _, row in df_bays.iterrows():
             bays_por_chave[row["chave"]] = (row["latitude"], row["longitude"])
-            popup_html = f"<b>{row['subestacao']}</b><br>Agente Operador: {row['agente_operador']}"
+            nome_se = _nome_subestacao(row["subestacao"])
+            popup_html = f"<b>{nome_se}</b><br>Agente Operador: {row['agente_operador']}"
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
                 icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 26),
-                tooltip=row["subestacao"],
+                tooltip=nome_se,
                 popup=folium.Popup(popup_html, max_width=250),
             ).add_to(m)
 
@@ -222,7 +233,6 @@ def build_map(
             ).add_to(m)
 
     for _, row in df_conjuntos.iterrows():
-        tamanho = int(min(16 + row["qtd_usinas"] * 1.1, 34))
         popup_html = (
             '<div style="min-width:236px; max-width:270px;">'
             f'<div style="font-family: Georgia, \'Times New Roman\', serif; font-size:15px; '
@@ -244,7 +254,7 @@ def build_map(
         )
         folium.Marker(
             location=[row["latitude"], row["longitude"]],
-            icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _COR_CONJUNTOS, tamanho),
+            icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _COR_CONJUNTOS, _TAMANHO_ICONE_CONJUNTO),
             tooltip=row["conjunto"],
             popup=folium.Popup(popup_html, max_width=300),
         ).add_to(m)
