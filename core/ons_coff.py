@@ -20,17 +20,43 @@ URL_BASE = (
 _PRIMEIRO_MES_DISPONIVEL = (2021, 1)
 
 
+def _mes_anterior(ano: int, mes: int) -> tuple[int, int]:
+    mes -= 1
+    if mes == 0:
+        mes = 12
+        ano -= 1
+    return ano, mes
+
+
+@st.cache_data(ttl=6 * 3600)
+def _arquivo_existe(ano: int, mes: int) -> bool:
+    """HEAD no S3 do ONS pra confirmar que o CSV daquele mês já foi publicado."""
+    try:
+        resposta = requests.head(URL_BASE.format(ano=ano, mes=mes), timeout=30)
+        return resposta.status_code == 200
+    except requests.RequestException:
+        return False
+
+
 def meses_disponiveis() -> list[tuple[int, int]]:
-    """Lista (ano, mes) do mês mais recente pro mais antigo disponível no ONS."""
+    """Lista (ano, mes) do mês mais recente pro mais antigo disponível no ONS.
+
+    O ONS só publica o CSV de um mês depois que ele já tem dados, então o mês
+    corrente (e às vezes o anterior) pode ainda não existir. Faz HEAD nos
+    primeiros candidatos e descarta os que retornam 404.
+    """
     hoje = date.today()
-    meses = []
     ano, mes = hoje.year, hoje.month
+    # Pula meses recentes ainda não publicados (no máximo 3 tentativas).
+    for _ in range(3):
+        if _arquivo_existe(ano, mes):
+            break
+        ano, mes = _mes_anterior(ano, mes)
+
+    meses = []
     while (ano, mes) >= _PRIMEIRO_MES_DISPONIVEL:
         meses.append((ano, mes))
-        mes -= 1
-        if mes == 0:
-            mes = 12
-            ano -= 1
+        ano, mes = _mes_anterior(ano, mes)
     return meses
 
 
