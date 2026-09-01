@@ -1,5 +1,6 @@
 """Construção do mapa (Folium/Leaflet) dos conjuntos eólicos do RN."""
 
+import io
 import json
 import re
 from pathlib import Path
@@ -383,3 +384,47 @@ def build_map(
         m.get_root().html.add_child(folium.Element(_legenda_tensao_html()))
 
     return m
+
+
+def df_para_key(df: pd.DataFrame | None) -> str:
+    """Serializa um DataFrame numa string estável, para servir de chave de
+    ``@st.cache_data`` em ``build_map_html`` (DataFrame não é hashável)."""
+    if df is None or df.empty:
+        return ""
+    return df.to_json(orient="split", date_format="iso")
+
+
+@st.cache_data(show_spinner=False)
+def build_map_html(
+    conjuntos_json: str,
+    usinas_json: str,
+    bays_json: str,
+    cidades_json: str,
+    linhas_json: str,
+    camadas_itens: tuple,
+    altura: int = 650,
+) -> str:
+    """Versão cacheável de ``build_map``: recebe DataFrames serializados como
+    JSON (chaves estáveis) e devolve o HTML do mapa já renderizado.
+
+    Streamlit reroda ``render()`` inteira a cada clique de filtro/camada; sem
+    este cache o folium.Map (54 conjuntos + subestações + linhas + máscara +
+    ícones tingidos) era reconstruído e reserializado (~2 MB) toda vez. Com o
+    cache, alternar uma camada reaproveita o HTML quando os dados de origem
+    não mudaram — reconstrói só quando os conjuntos filtrados ou as flags de
+    camada de fato mudam.
+    """
+    def _ler(js: str) -> pd.DataFrame | None:
+        return pd.read_json(io.StringIO(js), orient="split") if js else None
+
+    m = build_map(
+        _ler(conjuntos_json),
+        _ler(usinas_json),
+        _ler(bays_json),
+        _ler(cidades_json),
+        df_linhas=_ler(linhas_json),
+        camadas=dict(camadas_itens),
+    )
+    m.get_root().width = "100%"
+    m.get_root().height = f"{altura}px"
+    return m.get_root().render()

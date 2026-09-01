@@ -1,11 +1,11 @@
 """Página do mapa de localização dos conjuntos eólicos do RN."""
 
 import streamlit as st
-from streamlit_folium import st_folium
+import streamlit.components.v1 as components
 
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
 from core.ons_rede import baixar_linhas_rn
-from viz.map_charts import CAMADAS_PADRAO, build_map
+from viz.map_charts import CAMADAS_PADRAO, build_map_html, df_para_key
 
 _ROTULO_CAMADA = {
     "conjuntos": "Conjuntos eólicos",
@@ -76,15 +76,16 @@ def render() -> None:
     c3.metric("Municípios", len(_municipios_unicos(filtrado)))
     c4.metric("Capacidade", f"{filtrado['capacidade_mw'].sum():.0f} MW")
 
-    mapa_fig = build_map(
-        filtrado,
-        usinas_filtradas,
-        df_bays,
-        df_cidades,
-        df_linhas=df_linhas,
-        camadas=camadas,
+    mapa_html = build_map_html(
+        df_para_key(filtrado),
+        df_para_key(usinas_filtradas),
+        df_para_key(df_bays),
+        df_para_key(df_cidades),
+        df_para_key(df_linhas),
+        tuple(sorted(camadas.items())),
+        altura=650,
     )
-    st_folium(mapa_fig, height=650, use_container_width=True, returned_objects=[])
+    components.html(mapa_html, height=665, scrolling=False)
 
     with st.expander(f"Tabela de conjuntos ({len(filtrado)})"):
         st.dataframe(
