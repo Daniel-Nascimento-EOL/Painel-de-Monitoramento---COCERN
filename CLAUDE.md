@@ -1,7 +1,7 @@
 # Painel de Monitoramento de Constrained-off — Conjuntos Eólicos do RN
 
 > Trabalho acadêmico de mestrado. Guia de referência do projeto para o Claude Code.
-> Última atualização: 2026-08-24.
+> Última atualização: 2026-08-31.
 
 ---
 
@@ -12,13 +12,14 @@ geração por restrição operativa) dos conjuntos eólicos do Rio Grande do
 Norte. Duas entregas concluídas: (1) mapa de localização interativo, com
 subestações/cidades fixas, linhas de conexão e ficha de detalhe por
 conjunto; (2) motor de **Energia Frustrada** com download automático dos
-dados abertos do ONS e cálculo das 5 metodologias definidas pelo usuário.
+dados abertos do ONS (constrained-off + CMO Semi-Horário) e cálculo das 5
+metodologias definidas pelo usuário.
 Próximas fases (ficha de detalhe de subestação com documentos vinculados,
 linhas de transmissão coloridas por tensão) dependem de dados de nível de
 tensão (kV) por subestação, ainda não recebidos.
 
 - **Stack:** Python 3.13 / Streamlit / Folium (mapa) / Plotly (gráficos) /
-  Pandas / NumPy / Shapely / Pillow (ícones) / Requests (download ONS/CCEE)
+  Pandas / NumPy / Shapely / Pillow (ícones) / Requests (download ONS)
 - **Repositório:** https://github.com/Daniel-Nascimento-EOL/Painel-de-Monitoramento---COCERN
   (privado, branch `main`)
 - **Comando de execução:** `streamlit run app.py` (venv em `.venv/`, Python 3.13)
@@ -36,7 +37,7 @@ app.py                        ── page_config, CSS global, roteador (radio na
   │     └── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas)
   └── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia)
         ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
-        └── core/ccee_pld.py       ── download CCEE (PLD Nordeste), com fallback gracioso
+        └── core/ccee_pld.py       ── download ONS (CMO Semi-Horário NE, proxy do PLD), fallback gracioso
 
 data/
   ├── localizacao_conjuntos_ons_aneel.xlsx   ── conjuntos: ONS/ANEEL + id_ons, capacidade, ponto de
@@ -96,20 +97,29 @@ pelo ONS às 12h e 19h). Filtra `id_estado == "RN"` logo após o download
 como uma usina agregada — 54 usinas únicas no dataset = 54 conjuntos),
 e bate 1:1 com `Localizacao["id_ons"]`.
 
-### 2.4 PLD horário CCEE (ao vivo, com fallback)
+### 2.4 Preço horário — CMO Semi-Horário do ONS (ao vivo, com fallback)
 
-`core/ccee_pld.py::baixar_pld_nordeste()` tenta baixar o PLD horário do
-subsistema Nordeste (`https://dadosabertos.ccee.org.br/dataset/pld_horario`).
-**Risco conhecido**: o WAF da CCEE bloqueou toda requisição feita a partir
-do ambiente de desenvolvimento (403 "acesso bloqueado — política de
-segurança CCEE"), diferente do S3 do ONS que funciona normalmente. Pode
-funcionar no ambiente de deploy real — por isso a busca é tentada mesmo
-assim, mas com **fallback gracioso**: se falhar, `ui/energia_frustrada.py`
-mostra a energia frustrada em MWh normalmente e só omite as colunas de
-Impacto Financeiro (R$), com aviso claro ao usuário. **Se o bloqueio
-persistir em produção**, cogitar: (a) pedir pro usuário confirmar se tem
-outro acesso (chave de API, arquivo manual), ou (b) aceitar o painel só com
-MWh por enquanto.
+`core/ccee_pld.py::baixar_pld_nordeste()` baixa o **CMO Semi-Horário** do
+subsistema Nordeste direto do S3 do ONS (dataset `cmo-semi-horario`):
+`https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/cmo_tm/CMO_SEMIHORARIO_{ano}.csv`
+(CSV `;`-delimitado, **um arquivo por ano**; colunas `id_subsistema`,
+`nom_subsistema`, `din_instante`, `val_cmo`). Filtra `id_subsistema == "NE"`
+e agrega semi-horário → horário (média das duas meias-horas). A coluna
+resultante mantém o nome `pld_horario` por compatibilidade. Cache
+`@st.cache_data(ttl=6h)`.
+
+**Por que CMO e não PLD da CCEE**: a fonte original era o PLD horário da
+CCEE (`dadosabertos.ccee.org.br`), mas o portal inteiro passou a responder
+403 "Bloqueio Manutenção" de forma **persistente** (semanas), não só a
+partir do ambiente de desenvolvimento — não adianta tentar em produção. O
+CMO é o preço que origina o PLD (o PLD é o CMO com teto/piso regulatórios);
+para o período recente os dois praticamente coincidem, exceto quando o CMO
+extrapola os limites regulatórios.
+
+**Fallback gracioso mantido**: se o CSV do ano ainda não existir ou o
+download falhar, `baixar_pld_nordeste` retorna `None` e
+`ui/energia_frustrada.py` mostra a energia frustrada em MWh normalmente,
+omitindo só as colunas de Impacto Financeiro (R$), com aviso ao usuário.
 
 ---
 
@@ -146,7 +156,12 @@ suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
   basemap perto da fronteira.
 - **Gotcha do `max_bounds`**: precisa passar `min_lat/max_lat/min_lon/max_lon`
   explícitos — sozinho não trava o pan. Bounds em `_BOUNDS_RN`.
-- Basemap: `CartoDB positron`. Render via `streamlit_folium.st_folium`.
+- **Basemap: Esri "World Light Gray Base"** (URL de tiles explícita em
+  `viz/map_charts.py`, com `attr`). Estilo claro/minimalista equivalente ao
+  antigo `CartoDB positron` — trocado porque o positron da Carto passou a
+  exigir API key e a estampar "API KEY REQUIRED" nos tiles. Os tiles da
+  Esri (`server.arcgisonline.com/.../Canvas/World_Light_Gray_Base`) são
+  servidos sem key e sem marca d'água. Render via `streamlit_folium.st_folium`.
 
 ---
 
@@ -168,8 +183,9 @@ Metodologia 4 tem — são assimétricas na planilha original. Não "arrumar"
 isso achando que é inconsistência; é assim mesmo.
 
 Colunas resultantes: `energia_frustrada_1..5`, `g_ref_calculada_1/2`.
-Impacto financeiro = `energia_frustrada_N * pld_horario` (só disponível
-quando o PLD da CCEE carrega — ver §2.4).
+Impacto financeiro = `energia_frustrada_N * pld_horario`, onde
+`pld_horario` é o CMO Semi-Horário NE do ONS agregado por hora (ver §2.4);
+se o CSV do ano ainda não existir, o impacto financeiro é omitido.
 
 ---
 
@@ -215,9 +231,12 @@ implementados** — ver §3 e §4):
 2. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
    operativo, instrução de operação em PDF) — só temos o código do
    ajustamento operativo (texto), não os PDFs.
-3. **Impacto financeiro robusto**: depende do PLD da CCEE carregar de
-   verdade em produção (ver risco em §2.4). Se continuar bloqueado,
-   conversar com o usuário sobre alternativa de acesso.
+3. **Impacto financeiro — precisão CMO vs. PLD**: a fonte agora é o CMO
+   Semi-Horário do ONS (§2.4), não mais o PLD da CCEE (portal fora do ar).
+   CMO ≈ PLD, mas divergem quando o CMO extrapola teto/piso regulatórios.
+   Se for necessário o PLD exato, avaliar: (a) InfoMercado da CCEE (outro
+   endpoint), (b) arquivo manual do PLD, (c) aplicar teto/piso ANEEL sobre
+   o CMO como aproximação.
 
 Fontes de dados abertos levantadas (ONS constrained-off, ANEEL SIGA,
 COSERN) em `docs/fontes_dados_abertos.md`.

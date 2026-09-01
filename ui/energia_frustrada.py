@@ -22,8 +22,8 @@ _NOMES_MES = [
 def render() -> None:
     st.markdown("## Energia Frustrada — Constrained-off Eólico do RN")
     st.caption(
-        "Dados abertos do ONS (restrição/COFF eólica) e PLD horário da CCEE · "
-        "atualizado automaticamente 2x ao dia pelo ONS"
+        "Dados abertos do ONS: restrição/COFF eólica e CMO Semi-Horário "
+        "(preço de referência) · atualizado automaticamente 2x ao dia pelo ONS"
     )
     st.divider()
 
@@ -73,8 +73,9 @@ def render() -> None:
 
     if not pld_disponivel:
         st.warning(
-            "PLD indisponível no momento (bloqueio/erro no acesso à CCEE) — "
-            "exibindo apenas energia frustrada em MWh, sem impacto financeiro."
+            "Preço horário indisponível no momento (falha no acesso ao CMO "
+            "Semi-Horário do ONS) — exibindo apenas energia frustrada em MWh, "
+            "sem impacto financeiro."
         )
 
     total_mwh = df_calc[coluna_ef].sum()

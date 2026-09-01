@@ -187,11 +187,18 @@ def build_map(
     camadas: dict[str, bool] | None = None,
 ) -> folium.Map:
     camadas = {**CAMADAS_PADRAO, **(camadas or {})}
+    # Basemap: Esri "World Gray Canvas" — estilo claro/minimalista equivalente
+    # ao CartoDB positron, servido sem API key e sem marca d'água (o positron
+    # da Carto passou a exigir chave e a estampar "API KEY REQUIRED" nos tiles).
     m = folium.Map(
         location=CENTRO_RN,
         zoom_start=7,
         min_zoom=7,
-        tiles="CartoDB positron",
+        tiles=(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+        ),
+        attr="Tiles &copy; Esri — Esri, DeLorme, NAVTEQ",
         control_scale=True,
         max_bounds=True,
         min_lat=_BOUNDS_RN[0][0],
