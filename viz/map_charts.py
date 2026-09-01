@@ -1,5 +1,6 @@
 """Construção do mapa (Folium/Leaflet) dos conjuntos eólicos do RN."""
 
+import base64
 import io
 import json
 import re
@@ -38,11 +39,20 @@ def _nome_subestacao(nome: str) -> str:
     return nome if re.match(r"^SE\s+", nome, flags=re.IGNORECASE) else f"SE {nome}"
 
 
+# Os ícones de origem são 512x512 mas renderizam a ~24 px no mapa. Redimensionar
+# para esta resolução antes de codificar derruba o PNG embutido de ~51 KB para
+# ~2 KB por marcador (x69 marcadores => HTML ~1,5 MB mais leve), mantendo nitidez
+# folgada para telas retina.
+_RESOLUCAO_ICONE = 64
+
+
 @st.cache_resource
 def _tingir_icone_array(caminho: str, cor_hex: str) -> "np.ndarray":
     """Torna transparente o fundo claro do ícone (linha preta sobre fundo
     quase branco) e tinge os traços com a cor da paleta do projeto."""
     img = Image.open(caminho).convert("L")
+    if max(img.size) > _RESOLUCAO_ICONE:
+        img = img.resize((_RESOLUCAO_ICONE, _RESOLUCAO_ICONE), Image.LANCZOS)
     arr = np.array(img, dtype=np.float32)
     # traço escuro (L baixo) -> opaco; fundo claro (L alto) -> transparente,
     # com rampa suave entre os dois pra manter a borda anti-serrilhada.
@@ -57,10 +67,29 @@ def _tingir_icone_array(caminho: str, cor_hex: str) -> "np.ndarray":
     return rgba
 
 
+@st.cache_resource
+def _icone_data_uri(caminho: str, cor_hex: str) -> str:
+    """PNG do ícone tingido, codificado uma única vez como ``data:`` URI.
+
+    Sem isto, ``folium.CustomIcon`` recomprimia o PNG do ícone com
+    ``zlib.compress`` a cada um dos ~69 marcadores (54 conjuntos + 15
+    subestações) — 84% do tempo de construção do mapa. Como só há dois
+    ícones distintos (conjunto e subestação), o resultado é cacheado por
+    (arquivo, cor).
+    """
+    rgba = _tingir_icone_array(caminho, cor_hex)
+    buffer = io.BytesIO()
+    Image.fromarray(rgba, mode="RGBA").save(buffer, format="PNG", optimize=False, compress_level=1)
+    b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def _icone_customizado(caminho: Path, cor_hex: str, tamanho: int) -> folium.CustomIcon:
-    rgba = _tingir_icone_array(str(caminho), cor_hex)
     altura = int(tamanho * 1.35)
-    return folium.CustomIcon(icon_image=rgba, icon_size=(tamanho, altura))
+    return folium.CustomIcon(
+        icon_image=_icone_data_uri(str(caminho), cor_hex),
+        icon_size=(tamanho, altura),
+    )
 
 
 def _icone_turbina(cor: str, tamanho: int) -> folium.DivIcon:

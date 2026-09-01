@@ -134,11 +134,22 @@ suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
   `logo_se.jpeg`) vêm como linha preta sobre fundo quase branco. A função
   usa Pillow/NumPy pra tornar o fundo transparente (rampa de alpha por
   luminosidade) e tingir os traços na paleta do projeto, cacheado com
-  `@st.cache_resource`. **Gotcha do folium.CustomIcon**: a versão instalada
-  usa `folium.utilities.image_to_url` (não `branca.utilities`), que só
-  aceita path/URL string ou `numpy.ndarray` — **não aceita file-like
-  (BytesIO)**. Por isso a função retorna um array RGBA `uint8`, não bytes
-  de PNG.
+  `@st.cache_resource`. Os PNGs de origem são 512×512 mas renderizam a
+  ~24 px — `_tingir_icone_array` reduz para `_RESOLUCAO_ICONE` (64 px)
+  antes de codificar.
+- **Perf do mapa** (era o maior gargalo): `folium.CustomIcon` recomprimia
+  o PNG com `zlib.compress` a cada um dos ~69 marcadores (54 conjuntos +
+  15 subestações) — 84% do tempo de build. Corrigido em duas frentes:
+  (1) `_icone_data_uri()` codifica o PNG **uma vez por (arquivo, cor)**
+  como `data:` URI, cacheado (`@st.cache_resource`); só há 2 ícones
+  distintos; (2) o downscale para 64 px derruba o PNG embutido de ~51 KB
+  para ~5 KB por marcador. Build caiu de ~3,6 s para ~250 ms; HTML de
+  ~2 MB para ~660 KB. Além disso `build_map_html()` (`@st.cache_data`)
+  recebe os DataFrames serializados como JSON (via `df_para_key()`) e
+  devolve o HTML já renderizado — alternar uma camada com os mesmos dados
+  reaproveita o cache (~1 ms) em vez de reconstruir. Render via
+  `streamlit.components.v1.html` (one-way, leve), não `st_folium`
+  (round-trip bidirecional que não era usado — `returned_objects=[]`).
 - **Subestações e cidades ficam sempre visíveis** (não passam pelos
   filtros da sidebar) — pedido explícito do usuário via áudio, pra dar
   noção da escassez de subestações de transmissão no RN.
