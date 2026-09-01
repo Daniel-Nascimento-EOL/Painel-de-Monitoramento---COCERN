@@ -214,6 +214,7 @@ def build_map(
     df_bays: pd.DataFrame | None = None,
     df_cidades: pd.DataFrame | None = None,
     df_linhas: pd.DataFrame | None = None,
+    df_ses: pd.DataFrame | None = None,
     camadas: dict[str, bool] | None = None,
 ) -> folium.Map:
     camadas = {**CAMADAS_PADRAO, **(camadas or {})}
@@ -280,8 +281,9 @@ def build_map(
                 icon=_rotulo_cidade(row["cidade"]),
             ).add_to(m)
 
-    # Índice das subestações por chave (posição + tensão) — sempre montado,
-    # pois as linhas de conexão dependem dele mesmo com o marcador oculto.
+    # Índice das subestações do painel (as 15 curadas de bays.xlsx, enviadas
+    # pelo cliente) — posição + tensão. Usado pelos marcadores de SE e pelas
+    # linhas de conexão conjunto -> SE.
     bays_por_chave: dict[str, dict] = {}
     if df_bays is not None and not df_bays.empty:
         for _, row in df_bays.iterrows():
@@ -291,19 +293,32 @@ def build_map(
                 "tensao_max_kv": tensao_max,
             }
 
-    # Linhas de transmissão reais do ONS (>= 230 kV) — reta subestação -> subestação
+    # Índice de coordenadas de TODAS as ~46 subestações do RN no cadastro do
+    # ONS — usado apenas para posicionar as pontas das linhas de transmissão
+    # (o dataset de linhas não traz geometria, só os nomes das SE de/para).
+    # Parte de bays_por_chave e completa com as SE que não estão no painel.
+    ses_por_chave: dict[str, tuple] = {
+        chave: dados["pos"] for chave, dados in bays_por_chave.items()
+    }
+    if df_ses is not None and not df_ses.empty:
+        for _, row in df_ses.iterrows():
+            ses_por_chave.setdefault(
+                row["chave_subestacao"], (row["latitude"], row["longitude"])
+            )
+
+    # Linhas de transmissão do ONS (>= 230 kV) — reta subestação -> subestação
     # (o dataset não traz geometria), coloridas pelo nível de tensão da linha.
     if (
         camadas["linhas_transmissao"]
         and df_linhas is not None
         and not df_linhas.empty
-        and bays_por_chave
+        and ses_por_chave
     ):
         for _, ln in df_linhas.iterrows():
-            a = bays_por_chave.get(ln["chave_de"])
-            b = bays_por_chave.get(ln["chave_para"])
+            a = ses_por_chave.get(ln["chave_de"])
+            b = ses_por_chave.get(ln["chave_para"])
             if a is None or b is None:
-                continue  # linha entre SE fora do recorte do painel
+                continue  # alguma ponta sem coordenada no cadastro do ONS
             comprimento = ln.get("comprimento_km")
             comp_txt = f"{comprimento:.0f} km" if pd.notna(comprimento) else "—"
             popup_html = (
@@ -314,7 +329,7 @@ def build_map(
                 f'Agente: {ln["agente"]}</div>'
             )
             folium.PolyLine(
-                locations=[a["pos"], b["pos"]],
+                locations=[a, b],
                 color=cor_tensao(ln["tensao_kv"]),
                 weight=2.2,
                 opacity=0.75,
@@ -430,6 +445,7 @@ def build_map_html(
     bays_json: str,
     cidades_json: str,
     linhas_json: str,
+    ses_json: str,
     camadas_itens: tuple,
     altura: int = 650,
 ) -> str:
@@ -452,6 +468,7 @@ def build_map_html(
         _ler(bays_json),
         _ler(cidades_json),
         df_linhas=_ler(linhas_json),
+        df_ses=_ler(ses_json),
         camadas=dict(camadas_itens),
     )
     m.get_root().width = "100%"

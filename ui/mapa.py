@@ -4,7 +4,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
-from core.ons_rede import baixar_linhas_rn
+from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
 from viz.map_charts import CAMADAS_PADRAO, build_map_html, df_para_key
 
 _ROTULO_CAMADA = {
@@ -34,6 +34,12 @@ def render() -> None:
         df_linhas = baixar_linhas_rn()
     except Exception:
         df_linhas = None
+    try:
+        # Índice completo de SE do RN (46) — só para posicionar as pontas das
+        # linhas de transmissão; os marcadores de SE continuam vindo de bays.xlsx.
+        df_ses = baixar_subestacoes_rn()
+    except Exception:
+        df_ses = None
 
     st.markdown("## Mapa de Conjuntos Eólicos — Rio Grande do Norte")
     st.caption(
@@ -82,6 +88,7 @@ def render() -> None:
         df_para_key(df_bays),
         df_para_key(df_cidades),
         df_para_key(df_linhas),
+        df_para_key(df_ses),
         tuple(sorted(camadas.items())),
         altura=650,
     )
