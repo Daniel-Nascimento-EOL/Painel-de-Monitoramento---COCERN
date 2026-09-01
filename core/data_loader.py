@@ -6,6 +6,9 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from core.aneel_siga import baixar_potencias_eol_rn
+from core.ons_rede import _chave_subestacao_ons, baixar_subestacoes_rn
+
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "localizacao_conjuntos_ons_aneel.xlsx"
 BAYS_PATH = Path(__file__).resolve().parent.parent / "data" / "bays.xlsx"
 
@@ -60,9 +63,10 @@ def _chave_conjunto(nome: str) -> str:
 
 def _chave_subestacao(nome: str) -> str:
     """Normaliza o nome da subestação para juntar 'Ponto de conexão' (conjuntos,
-    ex.: 'SE Açu II') com 'Subestação' (Bays, ex.: 'Açu II')."""
-    nome = re.sub(r"^SE\s+", "", nome, flags=re.IGNORECASE)
-    return nome.strip().upper()
+    ex.: 'SE Açu II'), 'Subestação' (Bays, ex.: 'Açu II') e o cadastro do ONS
+    (ex.: 'ACU II'). Delega para a normalização canônica de ``core/ons_rede``
+    (sem acento, romano -> arábico, abreviações expandidas)."""
+    return _chave_subestacao_ons(nome)
 
 
 def _parse_capacidade(valor: str) -> float:
@@ -92,6 +96,15 @@ def load_usinas() -> pd.DataFrame:
     df = pd.read_excel(DATA_PATH, sheet_name="Detalhamento")
     df = df.rename(columns=_COLUNAS_USINAS)
     df["chave"] = df["conjunto"].apply(_chave_conjunto)
+    df["ceg"] = df["ceg"].astype(str).str.strip()
+
+    # Enriquecimento com a potência por usina (ANEEL SIGA, join por CEG).
+    # Fallback gracioso: se o SIGA não carregar, as colunas de potência
+    # ficam ausentes e o mapa apenas não as exibe.
+    siga = baixar_potencias_eol_rn()
+    if siga is not None:
+        df = df.merge(siga, on="ceg", how="left")
+
     return df
 
 
@@ -100,6 +113,22 @@ def load_bays() -> pd.DataFrame:
     df = pd.read_excel(BAYS_PATH, sheet_name="Bays")
     df = df.rename(columns=_COLUNAS_BAYS)
     df["chave"] = df["subestacao"].apply(_chave_subestacao)
+
+    # Anexa o nível de tensão (kV) do cadastro de subestações do ONS.
+    # Fallback gracioso: se o ONS não responder, as colunas de tensão ficam
+    # ausentes e o mapa apenas não colore por tensão.
+    try:
+        ses = baixar_subestacoes_rn()
+    except Exception:
+        ses = None
+    if ses is not None and not ses.empty:
+        ses = ses.rename(columns={"chave_subestacao": "chave"})
+        df = df.merge(
+            ses[["chave", "tensao_max_kv", "tensoes_kv", "agente_principal"]],
+            on="chave",
+            how="left",
+        )
+
     return df
 
 
