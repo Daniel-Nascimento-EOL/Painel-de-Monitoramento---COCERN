@@ -11,6 +11,8 @@ import streamlit as st
 from PIL import Image
 from shapely.geometry import shape
 
+from core.ons_rede import cor_tensao
+
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 ICONS_DIR = Path(__file__).resolve().parent.parent / "data" / "icons"
 
@@ -142,13 +144,49 @@ def _linha_agente(rotulo: str, nome, url_logo, cor_avatar: str) -> str:
     )
 
 
+# Camadas do mapa que o usuário pode ligar/desligar no filtro da sidebar.
+CAMADAS_PADRAO = {
+    "conjuntos": True,
+    "usinas": False,
+    "subestacoes": True,
+    "linhas_transmissao": True,
+    "linhas_conexao": True,
+    "cidades": True,
+}
+
+
+def _legenda_tensao_html() -> str:
+    """Legenda flutuante das cores de tensão (canto inferior esquerdo)."""
+    itens = "".join(
+        f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
+        f'<span style="width:16px;height:3px;background:{cor};display:inline-block;"></span>'
+        f'<span>{rotulo}</span></div>'
+        for rotulo, cor in [
+            ("138 kV", cor_tensao(138)),
+            ("230 kV", cor_tensao(230)),
+            ("500 kV", cor_tensao(500)),
+            ("69 kV / outra", cor_tensao(69)),
+        ]
+    )
+    return (
+        '<div style="position:fixed;bottom:22px;left:12px;z-index:9999;'
+        f'background:rgba(255,255,255,0.92);border:1px solid #d7dbe0;border-radius:6px;'
+        f'padding:8px 10px;font-family:{_FONTE_TEXTO};font-size:11px;color:#4a545e;'
+        'box-shadow:0 1px 4px rgba(0,0,0,0.12);">'
+        '<div style="font-weight:600;margin-bottom:4px;">Nível de tensão</div>'
+        f"{itens}</div>"
+    )
+
+
 def build_map(
     df_conjuntos: pd.DataFrame,
     df_usinas: pd.DataFrame | None = None,
     df_bays: pd.DataFrame | None = None,
     df_cidades: pd.DataFrame | None = None,
-    mostrar_usinas: bool = False,
+    df_linhas: pd.DataFrame | None = None,
+    camadas: dict[str, bool] | None = None,
 ) -> folium.Map:
+    camadas = {**CAMADAS_PADRAO, **(camadas or {})}
     m = folium.Map(
         location=CENTRO_RN,
         zoom_start=7,
@@ -188,8 +226,8 @@ def build_map(
 
     m.fit_bounds(_BOUNDS_RN)
 
-    # Cidades de referência — fixas, sempre visíveis, discretas (não são filtráveis).
-    if df_cidades is not None and not df_cidades.empty:
+    # Cidades de referência — discretas, alternáveis pelo filtro de camadas.
+    if camadas["cidades"] and df_cidades is not None and not df_cidades.empty:
         for _, row in df_cidades.iterrows():
             folium.CircleMarker(
                 location=[row["latitude"], row["longitude"]],
@@ -205,34 +243,88 @@ def build_map(
                 icon=_rotulo_cidade(row["cidade"]),
             ).add_to(m)
 
-    # Subestações / pontos de conexão — fixas, sempre visíveis.
-    bays_por_chave = {}
+    # Índice das subestações por chave (posição + tensão) — sempre montado,
+    # pois as linhas de conexão dependem dele mesmo com o marcador oculto.
+    bays_por_chave: dict[str, dict] = {}
     if df_bays is not None and not df_bays.empty:
         for _, row in df_bays.iterrows():
-            bays_por_chave[row["chave"]] = (row["latitude"], row["longitude"])
-            nome_se = _nome_subestacao(row["subestacao"])
-            popup_html = f"<b>{nome_se}</b><br>Agente Operador: {row['agente_operador']}"
-            folium.Marker(
-                location=[row["latitude"], row["longitude"]],
-                icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 26),
-                tooltip=nome_se,
-                popup=folium.Popup(popup_html, max_width=250),
+            tensao_max = row.get("tensao_max_kv")
+            bays_por_chave[row["chave"]] = {
+                "pos": (row["latitude"], row["longitude"]),
+                "tensao_max_kv": tensao_max,
+            }
+
+    # Linhas de transmissão reais do ONS (>= 230 kV) — reta subestação -> subestação
+    # (o dataset não traz geometria), coloridas pelo nível de tensão da linha.
+    if (
+        camadas["linhas_transmissao"]
+        and df_linhas is not None
+        and not df_linhas.empty
+        and bays_por_chave
+    ):
+        for _, ln in df_linhas.iterrows():
+            a = bays_por_chave.get(ln["chave_de"])
+            b = bays_por_chave.get(ln["chave_para"])
+            if a is None or b is None:
+                continue  # linha entre SE fora do recorte do painel
+            comprimento = ln.get("comprimento_km")
+            comp_txt = f"{comprimento:.0f} km" if pd.notna(comprimento) else "—"
+            popup_html = (
+                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
+                f'<b>{ln["subestacao_de"]} — {ln["subestacao_para"]}</b><br>'
+                f'{ln["tensao_kv"]:.0f} kV · {ln["tipo_rede"]}<br>'
+                f'Extensão: {comp_txt}<br>'
+                f'Agente: {ln["agente"]}</div>'
+            )
+            folium.PolyLine(
+                locations=[a["pos"], b["pos"]],
+                color=cor_tensao(ln["tensao_kv"]),
+                weight=2.2,
+                opacity=0.75,
+                tooltip=f'{ln["subestacao_de"]} — {ln["subestacao_para"]} ({ln["tensao_kv"]:.0f} kV)',
+                popup=folium.Popup(popup_html, max_width=280),
             ).add_to(m)
 
-    # Linhas de conexão conjunto -> subestação — fixas para os conjuntos exibidos.
-    if bays_por_chave:
+    # Linhas de conexão conjunto -> subestação — coloridas pela tensão máxima
+    # da subestação de conexão (fallback cinza quando a tensão é desconhecida).
+    if camadas["linhas_conexao"] and bays_por_chave:
         for _, row in df_conjuntos.iterrows():
             destino = bays_por_chave.get(row["chave_subestacao"])
             if destino is None:
                 continue
             folium.PolyLine(
-                locations=[[row["latitude"], row["longitude"]], destino],
-                color=_COR_LINHA_CONEXAO,
-                weight=1.5,
-                opacity=0.6,
+                locations=[[row["latitude"], row["longitude"]], destino["pos"]],
+                color=cor_tensao(destino["tensao_max_kv"]),
+                weight=1.6,
+                opacity=0.55,
+                dash_array="4,5",
+            ).add_to(m)
+
+    # Marcadores das subestações.
+    if camadas["subestacoes"] and df_bays is not None and not df_bays.empty:
+        for _, row in df_bays.iterrows():
+            nome_se = _nome_subestacao(row["subestacao"])
+            tensoes = row.get("tensoes_kv")
+            if isinstance(tensoes, (list, tuple)) and len(tensoes):
+                tensao_txt = " / ".join(f"{int(t)}" for t in tensoes) + " kV"
+            else:
+                tensao_txt = "tensão não cadastrada (ONS)"
+            popup_html = (
+                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
+                f"<b>{nome_se}</b><br>"
+                f"Níveis de tensão: {tensao_txt}<br>"
+                f'Agente Operador: {row["agente_operador"]}</div>'
+            )
+            folium.Marker(
+                location=[row["latitude"], row["longitude"]],
+                icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 26),
+                tooltip=f"{nome_se} · {tensao_txt}",
+                popup=folium.Popup(popup_html, max_width=260),
             ).add_to(m)
 
     for _, row in df_conjuntos.iterrows():
+        if not camadas["conjuntos"]:
+            break
         popup_html = (
             '<div style="min-width:236px; max-width:270px;">'
             f'<div style="font-family: Georgia, \'Times New Roman\', serif; font-size:15px; '
@@ -259,19 +351,28 @@ def build_map(
             popup=folium.Popup(popup_html, max_width=300),
         ).add_to(m)
 
-    if mostrar_usinas and df_usinas is not None and not df_usinas.empty:
+    if camadas["usinas"] and df_usinas is not None and not df_usinas.empty:
         for _, row in df_usinas.iterrows():
+            pot = row.get("potencia_fiscalizada_mw")
+            if pd.isna(pot):
+                pot = row.get("potencia_outorgada_mw")
+            pot_txt = f"{pot:.1f} MW" if pd.notna(pot) else "potência não localizada (SIGA)"
             popup_html = (
+                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
                 f"<b>{row['usina']}</b><br>"
                 f"Conjunto: {row['conjunto']}<br>"
+                f"Potência: {pot_txt}<br>"
                 f"CEG: {row['ceg']}<br>"
-                f"Município(s): {row['municipios']}"
+                f"Município(s): {row['municipios']}</div>"
             )
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
                 icon=_icone_turbina(_COR_USINAS, 15),
-                tooltip=row["usina"],
+                tooltip=f"{row['usina']} · {pot_txt}",
                 popup=folium.Popup(popup_html, max_width=280),
             ).add_to(m)
+
+    if camadas["linhas_transmissao"] or camadas["linhas_conexao"]:
+        m.get_root().html.add_child(folium.Element(_legenda_tensao_html()))
 
     return m

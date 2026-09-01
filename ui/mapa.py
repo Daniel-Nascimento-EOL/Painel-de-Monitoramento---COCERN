@@ -4,7 +4,17 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
-from viz.map_charts import build_map
+from core.ons_rede import baixar_linhas_rn
+from viz.map_charts import CAMADAS_PADRAO, build_map
+
+_ROTULO_CAMADA = {
+    "conjuntos": "Conjuntos eólicos",
+    "usinas": "Usinas individuais",
+    "subestacoes": "Subestações",
+    "linhas_transmissao": "Linhas de transmissão (ONS)",
+    "linhas_conexao": "Linhas de conexão conjunto–SE",
+    "cidades": "Cidades de referência",
+}
 
 
 def _municipios_unicos(df) -> list[str]:
@@ -20,6 +30,10 @@ def render() -> None:
     df_usinas = load_usinas()
     df_bays = load_bays()
     df_cidades = load_cidades()
+    try:
+        df_linhas = baixar_linhas_rn()
+    except Exception:
+        df_linhas = None
 
     st.markdown("## Mapa de Conjuntos Eólicos — Rio Grande do Norte")
     st.caption(
@@ -35,7 +49,12 @@ def render() -> None:
             "Município", municipios_disponiveis, placeholder="Todos"
         )
         busca = st.text_input("Buscar conjunto", placeholder="ex.: Acauã")
-        mostrar_usinas = st.toggle("Mostrar usinas individuais", value=False)
+
+    with st.sidebar.expander("Camadas do mapa", expanded=False):
+        camadas = {
+            chave: st.checkbox(_ROTULO_CAMADA[chave], value=padrao, key=f"camada_{chave}")
+            for chave, padrao in CAMADAS_PADRAO.items()
+        }
 
     filtrado = df_conjuntos
     if municipios_selecionados:
@@ -58,7 +77,12 @@ def render() -> None:
     c4.metric("Capacidade", f"{filtrado['capacidade_mw'].sum():.0f} MW")
 
     mapa_fig = build_map(
-        filtrado, usinas_filtradas, df_bays, df_cidades, mostrar_usinas=mostrar_usinas
+        filtrado,
+        usinas_filtradas,
+        df_bays,
+        df_cidades,
+        df_linhas=df_linhas,
+        camadas=camadas,
     )
     st_folium(mapa_fig, height=650, use_container_width=True, returned_objects=[])
 
