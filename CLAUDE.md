@@ -32,12 +32,15 @@ tensão (kV) por subestação, ainda não recebidos.
 streamlit run app.py
         ↓
 app.py                        ── page_config, CSS global, roteador (radio na sidebar: Mapa | Energia Frustrada)
-  ├── ui/mapa.py               ── página do mapa: filtros, métricas, render do mapa
+  ├── ui/mapa.py               ── página do mapa: filtros, métricas, render do mapa, botão "baixar PNG do mapa"
   │     ├── core/data_loader.py    ── carrega/normaliza Excel (@st.cache_data)
-  │     └── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas)
-  └── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia)
+  │     ├── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas)
+  │     └── viz/mapa_estatico.py   ── mesmo mapa como PNG (staticmap) — download e mini-mapa do PDF
+  └── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia), export PDF
         ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
-        └── core/ccee_pld.py       ── download ONS (CMO Semi-Horário NE, proxy do PLD), fallback gracioso
+        ├── core/ccee_pld.py       ── download ONS (CMO Semi-Horário NE, proxy do PLD), fallback gracioso
+        ├── core/relatorio_dados.py ── compila o "dossiê" por conjunto (cadastro + SE/linhas + COFF do mês)
+        └── viz/pdf_relatorio.py    ── relatório PDF consolidado (ReportLab + matplotlib): capa, resumo RN, seção/conjunto
 
 data/
   ├── localizacao_conjuntos_ons_aneel.xlsx   ── conjuntos: ONS/ANEEL + id_ons, capacidade, ponto de
@@ -167,12 +170,35 @@ suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
   basemap perto da fronteira.
 - **Gotcha do `max_bounds`**: precisa passar `min_lat/max_lat/min_lon/max_lon`
   explícitos — sozinho não trava o pan. Bounds em `_BOUNDS_RN`.
-- **Basemap: Esri "World Light Gray Base"** (URL de tiles explícita em
-  `viz/map_charts.py`, com `attr`). Estilo claro/minimalista equivalente ao
-  antigo `CartoDB positron` — trocado porque o positron da Carto passou a
-  exigir API key e a estampar "API KEY REQUIRED" nos tiles. Os tiles da
-  Esri (`server.arcgisonline.com/.../Canvas/World_Light_Gray_Base`) são
-  servidos sem key e sem marca d'água. Render via `streamlit_folium.st_folium`.
+- **Basemap: Esri "World Light Gray Base"** — URL/attr em constantes
+  `ESRI_TILES_URL` / `ESRI_TILES_ATTR` (`viz/map_charts.py`), compartilhadas
+  com o mapa estático. Estilo claro/minimalista equivalente ao antigo
+  `CartoDB positron` — trocado porque o positron da Carto passou a exigir
+  API key e a estampar "API KEY REQUIRED" nos tiles. Os tiles da Esri são
+  servidos sem key e sem marca d'água.
+- **Ícones escalam com o zoom**: os marcadores de SE e conjunto são
+  `folium.DivIcon` (fundo PNG numa `div.marcador-escala`), não `CustomIcon`.
+  `_script_escala_icones()` injeta um `<script>` que acha o objeto do mapa
+  (`window` → `map_*` instanceof `L.Map`), escuta `zoomend` e aplica
+  `transform: scale()` (teto 2,6×) na div interna — sem colidir com o
+  `translate3d` de posicionamento do Leaflet. `z_index_offset=1000` nos
+  marcadores + `.leaflet-marker-pane{z-index:640}` mantêm o ícone acima das
+  linhas. Marcador de conjunto tem tamanho fixo (`_TAMANHO_ICONE_CONJUNTO`),
+  sem proporcionalidade à qtd. de usinas.
+- **Prefixo `SE `**: `_nome_subestacao()` garante `SE <nome>` no tooltip e
+  popup das subestações (idempotente).
+
+### 3.1 Mapa estático (PNG) — `viz/mapa_estatico.py`
+
+`gerar_png_mapa(...)` reproduz um subconjunto das camadas do mapa
+interativo com `staticmap` (baixa os mesmos tiles Esri, desenha
+linhas/marcadores em PIL, sem navegador). Legenda de tensão e crédito dos
+tiles desenhados via `ImageDraw`. `gerar_png_mapa_cache(...)` é a versão
+`@st.cache_data` (DataFrames como JSON, igual a `build_map_html`). Usos:
+botão "baixar imagem do mapa" (`ui/mapa.py`, sob demanda — só no clique) e
+mini-mapa recortado por conjunto no relatório PDF (`zoom`/`centro`
+explícitos). Ícones tingidos escritos em PNG temporário (staticmap
+`IconMarker` exige caminho em disco), cache por (arquivo, cor, tamanho).
 
 ---
 
@@ -197,6 +223,36 @@ Colunas resultantes: `energia_frustrada_1..5`, `g_ref_calculada_1/2`.
 Impacto financeiro = `energia_frustrada_N * pld_horario`, onde
 `pld_horario` é o CMO Semi-Horário NE do ONS agregado por hora (ver §2.4);
 se o CSV do ano ainda não existir, o impacto financeiro é omitido.
+
+**Gotcha de unidade** (`core/relatorio_dados.py`): as colunas
+`energia_frustrada_*` já saem em **MWh** (o fator 0,5 h está embutido na
+fórmula `0.5·(ref−lim)`). Mas `val_geracao`/`val_geracaoreferencia`/
+`val_geracaolimitada` são **MW médios** por amostra — para virar MWh,
+multiplicar pelo intervalo real da amostra (`_intervalo_horas()` → 0,5 h
+no passo semi-horário do ONS). Sem isso, geração e fator de capacidade
+saem ~2× inflados.
+
+### 4.1 Relatório PDF — `core/relatorio_dados.py` + `viz/pdf_relatorio.py`
+
+`montar_relatorio(conjuntos, ano, mes, metodologia_ref)` (`@st.cache_data`)
+compila um `Relatorio`: um `DossieConjunto` por conjunto (cadastro, usinas
+membras via SIGA, SE de conexão com tensão/agente, linhas de transmissão
+que tocam a(s) SE, `coff_mensal` já com as 5 metodologias + CMO, agregados
+— geração verificada/referência/limitada, fator de capacidade, % da
+geração potencial frustrada, quebra por `cod_razaorestricao` — e série
+diária) + `resumo_rn` (agregado do estado, ranking dos conjuntos por
+corte). `conjuntos` vazio = todos.
+
+`gerar_pdf(rel, mapas_por_conjunto)` monta o PDF (ReportLab; gráficos em
+matplotlib `Agg` na paleta do painel): capa, sumário executivo do RN, uma
+seção por conjunto (cadastro + mini-mapa recortado, conexão à rede,
+tabela/gráficos de constrained-off, curva de duração do corte, anexo de
+usinas). `mapas_por_conjunto` (`conjunto → PNG`) vem de
+`viz.mapa_estatico.gerar_png_mapa` com `zoom`/`centro` do conjunto; opcional.
+
+UI: bloco "Exportar relatório PDF" em `ui/energia_frustrada.py` — geração
+sob demanda (botão), resultado em `st.session_state` para o
+`st.download_button`.
 
 ---
 
@@ -233,16 +289,18 @@ Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
 
 ## 7. Roadmap — pendências
 
-Itens do áudio de 2026-08-22 ainda não resolvidos (ficha de detalhe de
-conjunto, energia frustrada e linhas fixas conjunto↔subestação **já
-implementados** — ver §3 e §4):
+Já implementados: ficha de detalhe de conjunto, energia frustrada, linhas
+fixas conjunto↔subestação, **linhas coloridas por nível de tensão** (kV do
+cadastro ONS de subestações/linhas), **download PNG do mapa** e
+**relatório PDF consolidado de constrained-off por conjunto** — ver §3,
+§3.1, §4 e §4.1.
 
-1. **Linhas de conexão coloridas por nível de tensão** (138kV preto, 230kV
-   verde, 500kV vermelho) — falta dado de kV por subestação/linha.
-2. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
+Ainda não resolvidos:
+
+1. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
    operativo, instrução de operação em PDF) — só temos o código do
    ajustamento operativo (texto), não os PDFs.
-3. **Impacto financeiro — precisão CMO vs. PLD**: a fonte agora é o CMO
+2. **Impacto financeiro — precisão CMO vs. PLD**: a fonte agora é o CMO
    Semi-Horário do ONS (§2.4), não mais o PLD da CCEE (portal fora do ar).
    CMO ≈ PLD, mas divergem quando o CMO extrapola teto/piso regulatórios.
    Se for necessário o PLD exato, avaliar: (a) InfoMercado da CCEE (outro
