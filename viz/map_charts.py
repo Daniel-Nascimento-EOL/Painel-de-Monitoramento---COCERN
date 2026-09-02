@@ -18,6 +18,15 @@ from core.ons_rede import cor_tensao
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 ICONS_DIR = Path(__file__).resolve().parent.parent / "data" / "icons"
 
+# Basemap Esri "World Light Gray Base" — claro/minimalista, servido sem API
+# key e sem marca d'água. Compartilhado entre o mapa interativo (Leaflet) e
+# o mapa estático (viz/mapa_estatico.py).
+ESRI_TILES_URL = (
+    "https://server.arcgisonline.com/ArcGIS/rest/services/"
+    "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+)
+ESRI_TILES_ATTR = "Tiles © Esri — Esri, DeLorme, NAVTEQ"
+
 CENTRO_RN = (-5.6, -36.4)
 # Bbox real do RN (data/rn_estado.geojson) + margem mínima — pan quase travado no estado.
 _BOUNDS_RN = [[-7.10, -38.72], [-4.70, -34.83]]
@@ -304,11 +313,8 @@ def build_map(
         location=CENTRO_RN,
         zoom_start=7,
         min_zoom=7,
-        tiles=(
-            "https://server.arcgisonline.com/ArcGIS/rest/services/"
-            "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-        ),
-        attr="Tiles &copy; Esri — Esri, DeLorme, NAVTEQ",
+        tiles=ESRI_TILES_URL,
+        attr=ESRI_TILES_ATTR,
         control_scale=True,
         max_bounds=True,
         min_lat=_BOUNDS_RN[0][0],
