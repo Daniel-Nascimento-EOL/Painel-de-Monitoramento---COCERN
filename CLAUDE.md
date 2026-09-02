@@ -110,8 +110,20 @@ e bate 1:1 com `Localizacao["id_ons"]`.
 submercado Nordeste dos dados abertos da CCEE (dataset `pld_horario`, um
 CSV por ano em `pda-download.ccee.org.br/{recurso}/content`; colunas
 `MES_REFERENCIA`, `SUBMERCADO`, `PERIODO_COMERCIALIZACAO`, `DIA`, `HORA`,
-`PLD_HORA`). Os ids dos recursos anuais (2021–2026) estão em
-`_RECURSOS_POR_ANO`. Cache `@st.cache_data(ttl=6h)`.
+`PLD_HORA`). Cache `@st.cache_data(ttl=6h)`.
+
+**A web é sempre a fonte principal** — o objetivo é que anos novos entrem
+sozinhos conforme a CCEE publica. Duas cascatas, cada uma com fallbacks:
+
+*Descoberta da URL do ano* (`_urls_por_ano()`, cache 6 h):
+1. API CKAN `package_show?id=pld_horario` → JSON com `pld_horario_{ano}` → URL
+2. HTML de `dadosabertos.ccee.org.br/dataset/pld_horario` (regex nos links)
+3. `_RECURSOS_CONHECIDOS` — ids fixos no código (2021–2026), último recurso
+
+*Download do CSV*: httpx → curl (subprocesso) → requests → `data/historico_pld_ne.csv`.
+
+Cada nível foi testado forçando a falha do anterior. `anos_disponiveis()`
+devolve os anos publicados (mais recente primeiro).
 
 **Gotcha do bloqueio da CCEE — não "consertar" removendo os headers**: o
 perímetro da CCEE responde 403 "acesso bloqueado" a requisições que não
@@ -124,11 +136,11 @@ pareçam de navegador, em **duas camadas independentes**:
    (urllib3) leva 403 — o handshake não parece de navegador. `httpx` e o
    binário `curl` passam.
 
-Por isso o download tenta, em ordem: **httpx → curl (subprocesso) →
-requests**, e só então cai para `data/historico_pld_ne.csv` (série local
-17/10/2021–07/07/2025, extraída da planilha do estudo de referência). Se
-nada funcionar, retorna `None` e a UI mostra a energia frustrada em MWh
-sem o impacto financeiro, com aviso.
+Por isso a cascata de transportes acima. O fallback offline
+(`data/historico_pld_ne.csv`, série 17/10/2021–07/07/2025 extraída da
+planilha do estudo de referência) é o último recurso; se nada funcionar,
+`baixar_pld_nordeste` retorna `None` e a UI mostra a energia frustrada em
+MWh sem o impacto financeiro, com aviso.
 
 **Por que PLD e não CMO** (a decisão anterior era o inverso — ver histórico
 do commit `491a5a6`): o **CMO** do ONS é o custo marginal de operação, sem
@@ -361,11 +373,10 @@ Ainda não resolvidos:
 1. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
    operativo, instrução de operação em PDF) — só temos o código do
    ajustamento operativo (texto), não os PDFs.
-2. **Recursos anuais da CCEE são ids fixos** (`_RECURSOS_POR_ANO` em
-   `core/ccee_pld.py`). O de 2027 precisará ser acrescentado quando a CCEE
-   publicar — pegar em https://dadosabertos.ccee.org.br/dataset/pld_horario.
-   Sem o id, o ano cai no fallback local (que termina em jul/2025) e o
-   impacto financeiro fica indisponível.
+2. **Fallback offline do PLD envelhece**: `data/historico_pld_ne.csv` cobre
+   até 07/07/2025. Se a CCEE ficar inacessível por muito tempo, meses
+   recentes ficam sem impacto financeiro. Só importa se a web cair — a
+   descoberta pelo catálogo (§2.4) já absorve anos novos sozinha.
 
 Fontes de dados abertos levantadas (ONS constrained-off, ANEEL SIGA,
 COSERN) em `docs/fontes_dados_abertos.md`.
