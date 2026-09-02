@@ -6,17 +6,101 @@ cálculo de energia frustrada definidas pelo usuário e exibe agregados por
 conjunto e ao longo do tempo.
 """
 
+from datetime import date
+
 import plotly.express as px
 import streamlit as st
 
 from core.ccee_pld import anexar_pld, baixar_pld_nordeste
-from core.data_loader import load_conjuntos
+from core.data_loader import load_bays, load_conjuntos
 from core.ons_coff import METODOLOGIAS, baixar_mes_rn, calcular_metodologias, meses_disponiveis
+from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
+from core.relatorio_dados import montar_relatorio
+from viz.mapa_estatico import gerar_png_mapa
+from viz.pdf_relatorio import gerar_pdf
 
 _NOMES_MES = [
     "janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
 ]
+
+
+def _minimapas_por_conjunto(dossies, camadas) -> dict:
+    """Gera o PNG recortado (conjunto + SE de conexão + linhas) de cada
+    dossiê, para embutir no PDF. Falha graciosa: conjunto sem mapa apenas
+    sai sem a figura."""
+    df_conj = load_conjuntos()
+    df_bays = load_bays()
+    try:
+        df_linhas = baixar_linhas_rn()
+    except Exception:
+        df_linhas = None
+    try:
+        df_ses = baixar_subestacoes_rn()
+    except Exception:
+        df_ses = None
+
+    mapas: dict[str, bytes] = {}
+    for d in dossies:
+        try:
+            linha_conj = df_conj[df_conj["conjunto"] == d.conjunto]
+            se_chaves = set(linha_conj["chave_subestacao"])
+            bays_conj = df_bays[df_bays["chave"].isin(se_chaves)]
+            linhas_conj = (
+                df_linhas[
+                    df_linhas["chave_de"].isin(se_chaves) | df_linhas["chave_para"].isin(se_chaves)
+                ]
+                if df_linhas is not None else None
+            )
+            mapas[d.conjunto] = gerar_png_mapa(
+                linha_conj, None, bays_conj, None, linhas_conj, df_ses,
+                camadas=camadas, largura=760, altura=600,
+                zoom=11, centro=(d.cadastro["longitude"], d.cadastro["latitude"]),
+            )
+        except Exception:
+            continue
+    return mapas
+
+
+def _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo) -> None:
+    """Exporta um PDF consolidado (sumário executivo + seção por conjunto)."""
+    st.divider()
+    st.markdown("#### Exportar relatório PDF")
+    alvo = conjuntos_selecionados or df_conjuntos["conjunto"].sort_values().tolist()
+    escolha = st.multiselect(
+        "Conjuntos no relatório",
+        df_conjuntos["conjunto"].sort_values().tolist(),
+        default=alvo,
+        help="Vazio = todos os conjuntos do RN. Padrão segue o filtro de conjunto acima.",
+    )
+    incluir_mapa = st.checkbox("Incluir mini-mapa por conjunto (mais lento)", value=True)
+
+    if st.button("📄 Gerar relatório PDF", type="primary"):
+        alvo_final = tuple(escolha) if escolha else tuple(df_conjuntos["conjunto"])
+        rel = montar_relatorio(alvo_final, ano, mes, metodo)
+        mapas = {}
+        if incluir_mapa:
+            cam = {
+                "conjuntos": True, "subestacoes": True, "linhas_transmissao": True,
+                "linhas_conexao": True, "usinas": False, "cidades": False,
+            }
+            with st.spinner("Renderizando mini-mapas..."):
+                mapas = _minimapas_por_conjunto(rel.dossies, cam)
+        with st.spinner("Montando o PDF..."):
+            st.session_state["_pdf_relatorio"] = gerar_pdf(rel, mapas)
+            st.session_state["_pdf_relatorio_nome"] = (
+                f"relatorio_constrained_off_{ano}{mes:02d}_metod{metodo}.pdf"
+            )
+
+    pdf = st.session_state.get("_pdf_relatorio")
+    if pdf:
+        st.download_button(
+            "⬇️ Baixar PDF",
+            data=pdf,
+            file_name=st.session_state.get("_pdf_relatorio_nome", "relatorio.pdf"),
+            mime="application/pdf",
+        )
+        st.caption(f"Gerado em {date.today():%d/%m/%Y}. Reabra o gerador após trocar mês, conjuntos ou metodologia.")
 
 
 def render() -> None:
@@ -109,6 +193,8 @@ def render() -> None:
         title="Energia frustrada por dia",
     )
     st.plotly_chart(fig_serie, use_container_width=True)
+
+    _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
 
     with st.expander("Tabela detalhada"):
         colunas_tabela = ["din_instante", "conjunto", "val_geracao", "val_geracaolimitada", coluna_ef]
