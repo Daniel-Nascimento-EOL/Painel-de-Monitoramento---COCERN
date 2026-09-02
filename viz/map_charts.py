@@ -389,9 +389,9 @@ def build_map(
 
         # Subestações do cadastro do ONS que são ponta de linha mas não estão
         # em bays.xlsx (majoritariamente SE coletoras de complexos eólicos e
-        # SE da rede básica não listadas pelo cliente). Marcador discreto —
-        # círculo pequeno na cor de subestação — só para a linha não terminar
-        # no vazio. Não recebem linha de conexão (essa continua só nas do cliente).
+        # SE da rede básica não listadas pelo cliente). Mesmo ícone de SE do
+        # painel, porém menor, para dar hierarquia visual em relação às 15 do
+        # cliente. Não recebem linha de conexão (essa continua só nas do cliente).
         for chave, se in ses_ons_por_chave.items():
             if chave not in ses_com_linha:
                 continue
@@ -409,14 +409,9 @@ def build_map(
                 f'<span style="color:#8b939c;font-size:11px;">Fonte: cadastro ONS '
                 f"(não consta em bays.xlsx)</span></div>"
             )
-            folium.CircleMarker(
+            folium.Marker(
                 location=[se["latitude"], se["longitude"]],
-                radius=4,
-                color=_COR_SUBESTACAO,
-                weight=1.5,
-                fill=True,
-                fill_color="#ffffff",
-                fill_opacity=1,
+                icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 18),
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
             ).add_to(m)
