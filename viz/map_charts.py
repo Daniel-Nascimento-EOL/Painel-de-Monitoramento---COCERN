@@ -49,10 +49,25 @@ _RESOLUCAO_ICONE = 64
 @st.cache_resource
 def _tingir_icone_array(caminho: str, cor_hex: str) -> "np.ndarray":
     """Torna transparente o fundo claro do ícone (linha preta sobre fundo
-    quase branco) e tinge os traços com a cor da paleta do projeto."""
-    img = Image.open(caminho).convert("L")
+    quase branco) e tinge os traços com a cor da paleta do projeto.
+
+    Aceita tanto ícones opacos (JPEG, fundo branco) quanto PNG com canal
+    alpha — nesse caso o ícone é composto sobre branco antes de converter
+    para luminância, para que a rampa de alpha por luminosidade funcione
+    igual nos dois casos.
+    """
+    img = Image.open(caminho)
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        fundo = Image.new("RGB", img.size, (255, 255, 255))
+        fundo.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[-1])
+        img = fundo
+    img = img.convert("L")
     if max(img.size) > _RESOLUCAO_ICONE:
-        img = img.resize((_RESOLUCAO_ICONE, _RESOLUCAO_ICONE), Image.LANCZOS)
+        escala = _RESOLUCAO_ICONE / max(img.size)
+        img = img.resize(
+            (max(1, round(img.width * escala)), max(1, round(img.height * escala))),
+            Image.LANCZOS,
+        )
     arr = np.array(img, dtype=np.float32)
     # traço escuro (L baixo) -> opaco; fundo claro (L alto) -> transparente,
     # com rampa suave entre os dois pra manter a borda anti-serrilhada.
@@ -85,7 +100,9 @@ def _icone_data_uri(caminho: str, cor_hex: str) -> str:
 
 
 def _icone_customizado(caminho: Path, cor_hex: str, tamanho: int) -> folium.CustomIcon:
-    altura = int(tamanho * 1.35)
+    rgba = _tingir_icone_array(str(caminho), cor_hex)
+    alt_px, larg_px = rgba.shape[0], rgba.shape[1]
+    altura = max(1, round(tamanho * alt_px / larg_px))  # preserva a proporção real do ícone
     return folium.CustomIcon(
         icon_image=_icone_data_uri(str(caminho), cor_hex),
         icon_size=(tamanho, altura),
@@ -382,7 +399,7 @@ def build_map(
             )
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
-                icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 26),
+                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
             ).add_to(m)
@@ -411,7 +428,7 @@ def build_map(
             )
             folium.Marker(
                 location=[se["latitude"], se["longitude"]],
-                icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 18),
+                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 18),
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
             ).add_to(m)
