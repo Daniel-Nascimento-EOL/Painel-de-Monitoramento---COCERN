@@ -9,17 +9,18 @@
 
 Painel web (Streamlit) de monitoramento de **constrained-off** (corte de
 geração por restrição operativa) dos conjuntos eólicos do Rio Grande do
-Norte. Duas entregas concluídas: (1) mapa de localização interativo, com
+Norte. Três entregas concluídas: (1) mapa de localização interativo, com
 subestações/cidades fixas, linhas de conexão e ficha de detalhe por
 conjunto; (2) motor de **Energia Frustrada** com download automático dos
-dados abertos do ONS (constrained-off + CMO Semi-Horário) e cálculo das 5
-metodologias definidas pelo usuário.
+dados abertos do ONS (constrained-off) e da CCEE (PLD horário) e cálculo
+das 5 metodologias definidas pelo usuário; (3) **Painel de Preço Horário
+(PLD)** do submercado Nordeste, no estilo do painel da própria CCEE.
 Próximas fases (ficha de detalhe de subestação com documentos vinculados,
 linhas de transmissão coloridas por tensão) dependem de dados de nível de
 tensão (kV) por subestação, ainda não recebidos.
 
 - **Stack:** Python 3.13 / Streamlit / Folium (mapa) / Plotly (gráficos) /
-  Pandas / NumPy / Shapely / Pillow (ícones) / Requests (download ONS)
+  Pandas / NumPy / Shapely / Pillow (ícones) / httpx + Requests (downloads)
 - **Repositório:** https://github.com/Daniel-Nascimento-EOL/Painel-de-Monitoramento---COCERN
   (privado, branch `main`)
 - **Comando de execução:** `streamlit run app.py` (venv em `.venv/`, Python 3.13)
@@ -31,16 +32,17 @@ tensão (kV) por subestação, ainda não recebidos.
 ```
 streamlit run app.py
         ↓
-app.py                        ── page_config, CSS global, roteador (radio na sidebar: Mapa | Energia Frustrada)
+app.py                        ── page_config, CSS global, roteador (radio na sidebar: Mapa | Energia Frustrada | Preço Horário)
   ├── ui/mapa.py               ── página do mapa: filtros, métricas, render do mapa, botão "baixar PNG do mapa"
   │     ├── core/data_loader.py    ── carrega/normaliza Excel (@st.cache_data)
   │     ├── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas)
   │     └── viz/mapa_estatico.py   ── mesmo mapa como PNG (staticmap) — download e mini-mapa do PDF
-  └── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia), export PDF
-        ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
-        ├── core/ccee_pld.py       ── download ONS (CMO Semi-Horário NE, proxy do PLD), fallback gracioso
-        ├── core/relatorio_dados.py ── compila o "dossiê" por conjunto (cadastro + SE/linhas + COFF do mês)
-        └── viz/pdf_relatorio.py    ── relatório PDF consolidado (ReportLab + matplotlib): capa, resumo RN, seção/conjunto
+  ├── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia), export PDF
+  │     ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
+  │     ├── core/ccee_pld.py       ── download CCEE (PLD horário NE) com cascata de fallback
+  │     ├── core/relatorio_dados.py ── compila o "dossiê" por conjunto (cadastro + SE/linhas + COFF do mês)
+  │     └── viz/pdf_relatorio.py    ── relatório PDF consolidado (ReportLab + matplotlib): capa, resumo RN, seção/conjunto
+  └── ui/painel_pld.py         ── painel de preço horário: PLD da hora, curva do dia (Ontem/Hoje/Amanhã), evolução recente
 
 data/
   ├── localizacao_conjuntos_ons_aneel.xlsx   ── conjuntos: ONS/ANEEL + id_ons, capacidade, ponto de
@@ -48,6 +50,8 @@ data/
   ├── bays.xlsx                                ── subestações do RN/PB (agente operador, lat/long) e
   │                                              cidades de referência
   ├── rn_estado.geojson                        ── contorno do RN (IBGE, baixado uma vez)
+  ├── historico_pld_ne.csv                     ── PLD horário NE 17/10/2021–07/07/2025 (fallback offline
+  │                                              da CCEE; extraído da planilha do estudo de referência)
   └── icons/
         ├── logo_aero.jpg                      ── ícone de turbina (marcador de conjunto)
         └── logo_se.jpeg                        ── ícone de subestação (marcador de bay)
@@ -100,29 +104,50 @@ pelo ONS às 12h e 19h). Filtra `id_estado == "RN"` logo após o download
 como uma usina agregada — 54 usinas únicas no dataset = 54 conjuntos),
 e bate 1:1 com `Localizacao["id_ons"]`.
 
-### 2.4 Preço horário — CMO Semi-Horário do ONS (ao vivo, com fallback)
+### 2.4 Preço horário — PLD da CCEE (ao vivo, com cascata de fallback)
 
-`core/ccee_pld.py::baixar_pld_nordeste()` baixa o **CMO Semi-Horário** do
-subsistema Nordeste direto do S3 do ONS (dataset `cmo-semi-horario`):
-`https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/cmo_tm/CMO_SEMIHORARIO_{ano}.csv`
-(CSV `;`-delimitado, **um arquivo por ano**; colunas `id_subsistema`,
-`nom_subsistema`, `din_instante`, `val_cmo`). Filtra `id_subsistema == "NE"`
-e agrega semi-horário → horário (média das duas meias-horas). A coluna
-resultante mantém o nome `pld_horario` por compatibilidade. Cache
-`@st.cache_data(ttl=6h)`.
+`core/ccee_pld.py::baixar_pld_nordeste(ano)` baixa o **PLD horário** do
+submercado Nordeste dos dados abertos da CCEE (dataset `pld_horario`, um
+CSV por ano em `pda-download.ccee.org.br/{recurso}/content`; colunas
+`MES_REFERENCIA`, `SUBMERCADO`, `PERIODO_COMERCIALIZACAO`, `DIA`, `HORA`,
+`PLD_HORA`). Os ids dos recursos anuais (2021–2026) estão em
+`_RECURSOS_POR_ANO`. Cache `@st.cache_data(ttl=6h)`.
 
-**Por que CMO e não PLD da CCEE**: a fonte original era o PLD horário da
-CCEE (`dadosabertos.ccee.org.br`), mas o portal inteiro passou a responder
-403 "Bloqueio Manutenção" de forma **persistente** (semanas), não só a
-partir do ambiente de desenvolvimento — não adianta tentar em produção. O
-CMO é o preço que origina o PLD (o PLD é o CMO com teto/piso regulatórios);
-para o período recente os dois praticamente coincidem, exceto quando o CMO
-extrapola os limites regulatórios.
+**Gotcha do bloqueio da CCEE — não "consertar" removendo os headers**: o
+perímetro da CCEE responde 403 "acesso bloqueado" a requisições que não
+pareçam de navegador, em **duas camadas independentes**:
 
-**Fallback gracioso mantido**: se o CSV do ano ainda não existir ou o
-download falhar, `baixar_pld_nordeste` retorna `None` e
-`ui/energia_frustrada.py` mostra a energia frustrada em MWh normalmente,
-omitindo só as colunas de Impacto Financeiro (R$), com aviso ao usuário.
+1. **Cabeçalhos**: só `User-Agent` não basta. Precisa do conjunto
+   `Sec-Fetch-*` / `Sec-Ch-Ua` / `Upgrade-Insecure-Requests` que um Chrome
+   envia numa navegação (`_CABECALHOS`).
+2. **Impressão digital TLS**: mesmo com os cabeçalhos certos, `requests`
+   (urllib3) leva 403 — o handshake não parece de navegador. `httpx` e o
+   binário `curl` passam.
+
+Por isso o download tenta, em ordem: **httpx → curl (subprocesso) →
+requests**, e só então cai para `data/historico_pld_ne.csv` (série local
+17/10/2021–07/07/2025, extraída da planilha do estudo de referência). Se
+nada funcionar, retorna `None` e a UI mostra a energia frustrada em MWh
+sem o impacto financeiro, com aviso.
+
+**Por que PLD e não CMO** (a decisão anterior era o inverso — ver histórico
+do commit `491a5a6`): o **CMO** do ONS é o custo marginal de operação, sem
+piso nem teto, e **zera com frequência no Nordeste** quando sobra geração
+renovável — em vários meses de 2024 a mediana ficou abaixo de R$ 2/MWh,
+fazendo o painel reportar perdas de poucos reais. O **PLD** é o preço de
+liquidação: parte do CMO mas aplica o piso/teto da ANEEL e o processamento
+da CCEE. Constrained-off é energia que a usina deixou de **liquidar**, logo
+vale o PLD. Exemplo: Baixa do Feijão, jan/2024, 151,37 MWh → R$ 3 pelo CMO
+(R$ 0,02/MWh) vs. **R$ 9.244 pelo PLD** (R$ 61,07/MWh, piso do ano).
+
+A avaliação anterior concluiu que o portal da CCEE estava "fora do ar"; na
+verdade era o bloqueio de automação descrito acima.
+
+**Validação**: 32.640 horas conferidas contra a série de PLD do estudo de
+referência do cliente, **zero divergências**. Pisos anuais batem com os
+Despachos da ANEEL (49,77 em 2021 · 55,70 em 2022 · 69,04 em 2023 · 61,07
+em 2024 · 58,60 em 2025 · 57,31 em 2026). Cobertura 01/01/2021–hoje, sem
+lacunas.
 
 ---
 
@@ -221,8 +246,25 @@ isso achando que é inconsistência; é assim mesmo.
 
 Colunas resultantes: `energia_frustrada_1..5`, `g_ref_calculada_1/2`.
 Impacto financeiro = `energia_frustrada_N * pld_horario`, onde
-`pld_horario` é o CMO Semi-Horário NE do ONS agregado por hora (ver §2.4);
-se o CSV do ano ainda não existir, o impacto financeiro é omitido.
+`pld_horario` é o PLD horário NE da CCEE (ver §2.4); se o PLD não estiver
+disponível para o período, o impacto financeiro é omitido.
+
+### 4.1 Metodologia [1] é a de referência
+
+`METODOLOGIA_PADRAO = 1` em `core/ons_coff.py`, pré-selecionada no seletor
+e rotulada "(referência)". Ela reproduz **exatamente** os totais do estudo
+de referência do cliente (conferido junto a uma empresa especializada) —
+validado mês a mês, Baixa do Feijão em 2024: 151,37 / 569,89 / 345,58 /
+16,41 / 629,49 / 1017,10 / 756,33 / 622,01 / 1623,23 / 2025,81 / 859,03 /
+721,20 MWh. As outras 4 seguem no seletor para comparação metodológica.
+
+**Não implementar a fórmula da planilha `Perdas_PLD-*.xlsx` do cliente**
+(`=(IF(G<E,0,G-E))/2`, isto é `val_geracaoreferenciafinal −
+val_geracaolimitada`): ela está **quebrada**. `val_geracaoreferenciafinal`
+vem vazia em ~98% das linhas do ONS (1.937 de 83.520 em set/2024), o Excel
+trata vazio como 0, e o resultado é zero em quase tudo — conferido, dá
+0,00 MWh onde o BI mostra 16,41. O `Valor_Corte` que alimenta o Power BI
+do cliente **não** vem dessa coluna; equivale à Metodologia [1].
 
 **Gotcha de unidade** (`core/relatorio_dados.py`): as colunas
 `energia_frustrada_*` já saem em **MWh** (o fator 0,5 h está embutido na
@@ -232,12 +274,12 @@ multiplicar pelo intervalo real da amostra (`_intervalo_horas()` → 0,5 h
 no passo semi-horário do ONS). Sem isso, geração e fator de capacidade
 saem ~2× inflados.
 
-### 4.1 Relatório PDF — `core/relatorio_dados.py` + `viz/pdf_relatorio.py`
+### 4.2 Relatório PDF — `core/relatorio_dados.py` + `viz/pdf_relatorio.py`
 
 `montar_relatorio(conjuntos, ano, mes, metodologia_ref)` (`@st.cache_data`)
 compila um `Relatorio`: um `DossieConjunto` por conjunto (cadastro, usinas
 membras via SIGA, SE de conexão com tensão/agente, linhas de transmissão
-que tocam a(s) SE, `coff_mensal` já com as 5 metodologias + CMO, agregados
+que tocam a(s) SE, `coff_mensal` já com as 5 metodologias + PLD, agregados
 — geração verificada/referência/limitada, fator de capacidade, % da
 geração potencial frustrada, quebra por `cod_razaorestricao` — e série
 diária) + `resumo_rn` (agregado do estado, ranking dos conjuntos por
@@ -253,6 +295,24 @@ usinas). `mapas_por_conjunto` (`conjunto → PNG`) vem de
 UI: bloco "Exportar relatório PDF" em `ui/energia_frustrada.py` — geração
 sob demanda (botão), resultado em `st.session_state` para o
 `st.download_button`.
+
+---
+
+## 4.3 Painel de Preço Horário — `ui/painel_pld.py`
+
+Página inspirada no Painel de Preços da CCEE
+(https://www.ccee.org.br/precos/painel-precos): PLD da hora corrente em
+destaque (com delta vs. hora anterior), curva Plotly das 24 h do dia,
+métricas de máxima/mínima/média com a hora de cada extremo, e evolução
+recente (média diária + faixa mín–máx) em janelas de 30 a 365 dias.
+
+- Seletor **Ontem / Hoje / Amanhã** — o PLD é publicado com um dia de
+  antecedência, então "Amanhã" costuma existir; só entram no seletor os
+  dias efetivamente presentes na série.
+- Reaproveita `core/ccee_pld.baixar_pld_nordeste`, então o preço exibido é
+  o mesmo usado no impacto financeiro da Energia Frustrada.
+- Conferido contra o painel da CCEE (02/09/2026, NE): máxima 1.292,46,
+  mínima 57,31, média 212,81 R$/MWh.
 
 ---
 
@@ -291,21 +351,21 @@ Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
 
 Já implementados: ficha de detalhe de conjunto, energia frustrada, linhas
 fixas conjunto↔subestação, **linhas coloridas por nível de tensão** (kV do
-cadastro ONS de subestações/linhas), **download PNG do mapa** e
-**relatório PDF consolidado de constrained-off por conjunto** — ver §3,
-§3.1, §4 e §4.1.
+cadastro ONS de subestações/linhas), **download PNG do mapa**,
+**relatório PDF consolidado de constrained-off por conjunto**,
+**impacto financeiro pelo PLD real da CCEE** e **painel de preço horário**
+— ver §3, §3.1, §2.4, §4, §4.2 e §4.3.
 
 Ainda não resolvidos:
 
 1. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
    operativo, instrução de operação em PDF) — só temos o código do
    ajustamento operativo (texto), não os PDFs.
-2. **Impacto financeiro — precisão CMO vs. PLD**: a fonte agora é o CMO
-   Semi-Horário do ONS (§2.4), não mais o PLD da CCEE (portal fora do ar).
-   CMO ≈ PLD, mas divergem quando o CMO extrapola teto/piso regulatórios.
-   Se for necessário o PLD exato, avaliar: (a) InfoMercado da CCEE (outro
-   endpoint), (b) arquivo manual do PLD, (c) aplicar teto/piso ANEEL sobre
-   o CMO como aproximação.
+2. **Recursos anuais da CCEE são ids fixos** (`_RECURSOS_POR_ANO` em
+   `core/ccee_pld.py`). O de 2027 precisará ser acrescentado quando a CCEE
+   publicar — pegar em https://dadosabertos.ccee.org.br/dataset/pld_horario.
+   Sem o id, o ano cai no fallback local (que termina em jul/2025) e o
+   impacto financeiro fica indisponível.
 
 Fontes de dados abertos levantadas (ONS constrained-off, ANEEL SIGA,
 COSERN) em `docs/fontes_dados_abertos.md`.
