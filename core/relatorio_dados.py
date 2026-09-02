@@ -158,7 +158,7 @@ def montar_relatorio(
     tem_impacto = "pld_horario" in coff and coff["pld_horario"].notna().any()
     if not tem_impacto:
         avisos.append(
-            "CMO Semi-Horário do ONS indisponível para o período — o relatório "
+            "PLD horário da CCEE indisponível para o período — o relatório "
             "traz a energia frustrada em MWh, sem o impacto financeiro em R$."
         )
 

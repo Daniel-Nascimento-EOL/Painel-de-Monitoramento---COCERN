@@ -1,9 +1,12 @@
 """Página de Energia Frustrada — constrained-off eólico do RN.
 
-Baixa os dados abertos do ONS (restrição/COFF, filtrados por RN) e do PLD
-horário da CCEE (subsistema Nordeste), reproduz as 5 metodologias de
-cálculo de energia frustrada definidas pelo usuário e exibe agregados por
-conjunto e ao longo do tempo.
+Baixa os dados abertos do ONS (restrição/COFF, filtrados por RN), reproduz
+as 5 metodologias de energia frustrada e valora o impacto financeiro pelo
+PLD horário do submercado Nordeste (dados abertos da CCEE), exibindo
+agregados por conjunto e ao longo do tempo.
+
+A metodologia [1] vem pré-selecionada por ter sido validada contra o estudo
+de referência do cliente; as demais ficam no seletor para comparação.
 """
 
 from datetime import date
@@ -13,7 +16,13 @@ import streamlit as st
 
 from core.ccee_pld import anexar_pld, baixar_pld_nordeste
 from core.data_loader import load_bays, load_conjuntos
-from core.ons_coff import METODOLOGIAS, baixar_mes_rn, calcular_metodologias, meses_disponiveis
+from core.ons_coff import (
+    METODOLOGIA_PADRAO,
+    METODOLOGIAS,
+    baixar_mes_rn,
+    calcular_metodologias,
+    meses_disponiveis,
+)
 from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
 from core.relatorio_dados import montar_relatorio
 from viz.mapa_estatico import gerar_png_mapa
@@ -106,8 +115,8 @@ def _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
 def render() -> None:
     st.markdown("## Energia Frustrada — Constrained-off Eólico do RN")
     st.caption(
-        "Dados abertos do ONS: restrição/COFF eólica e CMO Semi-Horário "
-        "(preço de referência) · atualizado automaticamente 2x ao dia pelo ONS"
+        "Constrained-off eólico dos dados abertos do ONS (atualizado 2x ao dia) "
+        "valorado pelo PLD horário do submercado Nordeste (CCEE)"
     )
     st.divider()
 
@@ -124,8 +133,14 @@ def render() -> None:
             "Conjunto", df_conjuntos["conjunto"].sort_values().tolist(), placeholder="Todos"
         )
 
+        chaves = list(METODOLOGIAS.keys())
         metodo = st.selectbox(
-            "Metodologia de cálculo", list(METODOLOGIAS.keys()), format_func=lambda n: f"Metodologia {n}"
+            "Metodologia de cálculo",
+            chaves,
+            index=chaves.index(METODOLOGIA_PADRAO),
+            format_func=lambda n: (
+                f"Metodologia {n}" + (" (referência)" if n == METODOLOGIA_PADRAO else "")
+            ),
         )
         st.caption(METODOLOGIAS[metodo][1])
 
@@ -140,12 +155,10 @@ def render() -> None:
         return
 
     df_calc = calcular_metodologias(df_bruto)
-    df_pld = baixar_pld_nordeste(ano)
-    df_calc = anexar_pld(df_calc, df_pld)
-    pld_disponivel = df_pld is not None
-
+    df_calc = anexar_pld(df_calc, baixar_pld_nordeste(ano))
     coluna_ef, _ = METODOLOGIAS[metodo]
     df_calc["impacto_financeiro"] = df_calc[coluna_ef] * df_calc["pld_horario"]
+    pld_disponivel = bool(df_calc["pld_horario"].notna().any())
 
     df_calc = df_calc.merge(
         df_conjuntos[["id_ons", "conjunto"]], on="id_ons", how="left"
@@ -157,9 +170,8 @@ def render() -> None:
 
     if not pld_disponivel:
         st.warning(
-            "Preço horário indisponível no momento (falha no acesso ao CMO "
-            "Semi-Horário do ONS) — exibindo apenas energia frustrada em MWh, "
-            "sem impacto financeiro."
+            "PLD horário indisponível para o período — exibindo apenas a "
+            "energia frustrada em MWh, sem o impacto financeiro."
         )
 
     total_mwh = df_calc[coluna_ef].sum()
@@ -167,7 +179,11 @@ def render() -> None:
     c1.metric("Energia frustrada no período", f"{total_mwh:,.0f} MWh".replace(",", "."))
     if pld_disponivel:
         total_financeiro = df_calc["impacto_financeiro"].sum()
-        c2.metric("Impacto financeiro no período", f"R$ {total_financeiro:,.0f}".replace(",", "."))
+        c2.metric(
+            "Impacto financeiro no período",
+            f"R$ {total_financeiro:,.0f}".replace(",", "."),
+            help="Energia frustrada valorada pelo PLD horário do submercado Nordeste (CCEE).",
+        )
     else:
         c2.metric("Impacto financeiro no período", "indisponível")
 
@@ -204,7 +220,8 @@ def render() -> None:
             coluna_ef: "Energia frustrada (MWh)",
         }
         if pld_disponivel:
-            colunas_tabela.append("impacto_financeiro")
+            colunas_tabela += ["pld_horario", "impacto_financeiro"]
+            renomeio["pld_horario"] = "PLD (R$/MWh)"
             renomeio["impacto_financeiro"] = "Impacto financeiro (R$)"
         st.dataframe(
             df_calc[colunas_tabela].rename(columns=renomeio),

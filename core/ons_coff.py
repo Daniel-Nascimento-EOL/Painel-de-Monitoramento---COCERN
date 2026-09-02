@@ -3,6 +3,10 @@ e cálculo das 5 metodologias de Energia Frustrada.
 
 Fonte: https://dados.ons.org.br/dataset/restricao_coff_eolica_usi — recurso
 mensal em CSV, atualizado pelo ONS 2x ao dia (12h e 19h).
+
+A metodologia [1] é a padrão (``METODOLOGIA_PADRAO``) por ter sido validada
+contra o estudo de referência do cliente; as demais ficam disponíveis no
+seletor da página para comparação metodológica.
 """
 
 from datetime import date
@@ -75,12 +79,21 @@ def baixar_mes_rn(ano: int, mes: int) -> pd.DataFrame:
     return df[df["id_estado"] == "RN"].reset_index(drop=True)
 
 
+METODOLOGIA_PADRAO = 1
+
+
 def calcular_metodologias(df: pd.DataFrame) -> pd.DataFrame:
     """Reproduz as 5 metodologias de Energia Frustrada (e as 2 gerações de
     referência calculadas auxiliares) definidas na planilha EOL_RN_coff_v2.
 
     Todas as fórmulas foram extraídas diretamente das fórmulas Excel da
     planilha de referência do usuário (openpyxl, coluna a coluna).
+
+    A **Metodologia [1]** é a padrão do painel: foi validada contra o estudo
+    de referência do cliente (conferido junto a uma empresa especializada) —
+    conjunto Baixa do Feijão, 2024, mês a mês: 151,37 / 569,89 / 345,58 /
+    16,41 / 629,49 / 1017,10 / 756,33 / 622,01 / 1623,23 / 2025,81 / 859,03 /
+    721,20 MWh, coincidindo com os totais do relatório de referência.
     """
     df = df.copy()
     lim = df["val_geracaolimitada"]
@@ -154,7 +167,8 @@ def calcular_metodologias(df: pd.DataFrame) -> pd.DataFrame:
 METODOLOGIAS = {
     1: (
         "energia_frustrada_1",
-        "Referência simples: 0,5·(geração de referência − geração limitada), quando a referência supera o limite.",
+        "Referência simples: 0,5·(geração de referência − geração limitada), quando a referência supera o limite. "
+        "Validada contra o estudo de referência do cliente.",
     ),
     2: (
         "energia_frustrada_2",

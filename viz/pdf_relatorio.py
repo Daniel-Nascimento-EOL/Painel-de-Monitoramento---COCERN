@@ -225,8 +225,9 @@ def _secao_capa(rel: Relatorio, S: dict) -> list:
                   f"<b>[{rel.metodologia_ref}]</b> — {METODOLOGIAS[rel.metodologia_ref][1]}", S["corpo"]),
         Spacer(1, 0.6 * cm),
         Paragraph(f"Gerado em {datetime.now():%d/%m/%Y %H:%M}", S["nota"]),
-        Paragraph("Fontes: ONS Dados Abertos (restrição/COFF eólica; CMO Semi-Horário NE), "
-                  "ANEEL SIGA, cadastro de subestações/linhas do ONS.", S["nota"]),
+        Paragraph("Fontes: ONS Dados Abertos (restrição/COFF eólica), CCEE Dados Abertos "
+                  "(PLD horário do submercado Nordeste), ANEEL SIGA, cadastro de "
+                  "subestações/linhas do ONS.", S["nota"]),
     ] + ([Spacer(1, 0.4 * cm)] + [Paragraph("⚠ " + a, S["nota"]) for a in rel.avisos] if rel.avisos else [])
 
 
@@ -333,7 +334,7 @@ def _secao_conjunto(d, rel: Relatorio, S: dict, larg: float, png_mapa: bytes | N
         ("Geração potencial frustrada", _fmt(ag["pct_geracao_potencial_frustrada"], 1, " %")),
     ]
     if ag.get("pld_medio_rs_mwh"):
-        pares.append(("CMO médio no mês", "R$ " + _fmt(ag["pld_medio_rs_mwh"], 2) + " /MWh"))
+        pares.append(("PLD médio no mês", "R$ " + _fmt(ag["pld_medio_rs_mwh"], 2) + " /MWh"))
     flow.append(_tabela_pares(pares, larg))
     flow.append(Spacer(1, 0.25 * cm))
 
