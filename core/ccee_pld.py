@@ -6,6 +6,21 @@ servido em ``pda-download.ccee.org.br``. Colunas: ``MES_REFERENCIA``
 (AAAAMM), ``SUBMERCADO``, ``PERIODO_COMERCIALIZACAO``, ``DIA``, ``HORA``,
 ``PLD_HORA`` (R$/MWh).
 
+Cadeia de fontes (a web é sempre a principal)
+---------------------------------------------
+1. **Catálogo da CCEE** (:func:`_urls_por_ano`) descobre a URL de cada ano:
+   API CKAN → HTML da página do dataset → identificadores fixos no código.
+   Anos novos passam a ser lidos assim que a CCEE os publica, sem alteração
+   de código.
+2. **Download do CSV do ano** por três transportes: httpx → curl → requests
+   (ver a seção sobre o bloqueio, abaixo).
+3. **Fallback offline**: ``data/historico_pld_ne.csv``, série de PLD horário
+   do Nordeste de 17/10/2021 a 07/07/2025, extraída da planilha do estudo de
+   referência. Só entra em cena se a web estiver inacessível.
+
+Se nem o fallback cobrir o período, a função devolve None e a UI mostra a
+energia frustrada em MWh sem o impacto financeiro.
+
 Por que PLD e não CMO
 ---------------------
 O **CMO** (Custo Marginal de Operação, publicado pelo ONS) é o custo de
@@ -40,14 +55,11 @@ Por isso o download tenta, em ordem: ``httpx`` → ``curl`` (subprocesso) →
 ``requests``. Foi essa combinação que destravou a fonte; a versão anterior
 deste projeto concluiu que a CCEE estava "fora do ar" e migrou para o CMO
 do ONS, quando na verdade era o bloqueio de automação.
-
-Se todas as tentativas falharem, entra o **fallback local**:
-``data/historico_pld_ne.csv``, série de PLD horário do Nordeste de
-17/10/2021 a 07/07/2025, extraída da planilha de referência do estudo do
-cliente. Cobre o histórico, mas não recebe meses novos.
 """
 
 import io
+import json
+import re
 import subprocess
 
 import pandas as pd
@@ -64,10 +76,13 @@ from pathlib import Path
 _ARQUIVO_FALLBACK = Path(__file__).resolve().parent.parent / "data" / "historico_pld_ne.csv"
 
 _URL_PLD = "https://pda-download.ccee.org.br/{recurso}/content"
+_URL_CATALOGO = "https://dadosabertos.ccee.org.br/api/3/action/package_show?id=pld_horario"
+_URL_DATASET = "https://dadosabertos.ccee.org.br/dataset/pld_horario"
 
-# Identificadores dos recursos anuais do dataset `pld_horario` no portal de
-# dados abertos da CCEE (https://dadosabertos.ccee.org.br/dataset/pld_horario).
-_RECURSOS_POR_ANO = {
+# Identificadores conhecidos dos recursos anuais, usados apenas se a
+# descoberta pelo catálogo falhar. A lista fica desatualizada quando a CCEE
+# publica um ano novo — por isso a descoberta dinâmica vem primeiro.
+_RECURSOS_CONHECIDOS = {
     2021: "SMpDR_R7SCOOj6pMbk1BJg",
     2022: "0YTnGY1jRb-tarnKnSNT9g",
     2023: "HH4Xegm7R56M_H4qPNOvaw",
@@ -173,6 +188,52 @@ def _converter_csv_ccee(conteudo: bytes) -> pd.DataFrame | None:
     )
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _urls_por_ano() -> dict[int, str]:
+    """Descobre a URL do CSV de cada ano no catálogo de dados abertos da CCEE.
+
+    Anos novos entram sozinhos conforme a CCEE os publica — nada precisa ser
+    alterado no código. Tenta a API CKAN, depois o HTML da página do dataset
+    e, por fim, os identificadores conhecidos em ``_RECURSOS_CONHECIDOS``.
+    """
+    # 1) API CKAN: resposta estruturada, com nome e URL de cada recurso.
+    conteudo = _baixar_httpx(_URL_CATALOGO) or _baixar_curl(_URL_CATALOGO)
+    if conteudo:
+        try:
+            pacote = json.loads(conteudo)
+            urls = {}
+            for recurso in pacote["result"]["resources"]:
+                achado = re.fullmatch(r"pld_horario_(\d{4})", str(recurso.get("name", "")).strip())
+                url = str(recurso.get("url", ""))
+                if achado and url:
+                    urls[int(achado.group(1))] = url
+            if urls:
+                return urls
+        except Exception:
+            pass
+
+    # 2) HTML da página do dataset: os links seguem o padrão do pda-download.
+    conteudo = _baixar_httpx(_URL_DATASET) or _baixar_curl(_URL_DATASET)
+    if conteudo:
+        try:
+            html = conteudo.decode("utf-8", errors="ignore")
+            urls = {
+                int(ano): f"https://pda-download.ccee.org.br/{recurso}/content"
+                for ano, recurso in re.findall(
+                    r"pld_horario_(\d{4}).{0,4000}?pda-download\.ccee\.org\.br/([A-Za-z0-9_-]{15,})/content",
+                    html,
+                    re.DOTALL,
+                )
+            }
+            if urls:
+                return urls
+        except Exception:
+            pass
+
+    # 3) Identificadores fixados no código.
+    return {ano: _URL_PLD.format(recurso=r) for ano, r in _RECURSOS_CONHECIDOS.items()}
+
+
 def _pld_do_arquivo_local(ano: int) -> pd.DataFrame | None:
     """Fallback: recorta o ano da série local ``data/historico_pld_ne.csv``."""
     try:
@@ -189,17 +250,16 @@ def _pld_do_arquivo_local(ano: int) -> pd.DataFrame | None:
 def baixar_pld_nordeste(ano: int) -> pd.DataFrame | None:
     """PLD horário do submercado Nordeste para o ano informado.
 
-    Tenta o portal de dados abertos da CCEE por três transportes distintos
-    (httpx, curl, requests) e, se todos falharem, recorre à série local em
-    ``data/historico_pld_ne.csv``.
+    Descobre a URL do ano no catálogo da CCEE (ver :func:`_urls_por_ano`),
+    baixa por três transportes distintos (httpx, curl, requests) e, se tudo
+    falhar, recorre à série local em ``data/historico_pld_ne.csv``.
 
     Retorna um DataFrame com ``din_instante`` (hora cheia) e ``pld_horario``
     (R$/MWh), ou None se nenhuma fonte cobrir o ano — mantendo o fallback
     gracioso da página de Energia Frustrada.
     """
-    recurso = _RECURSOS_POR_ANO.get(ano)
-    if recurso is not None:
-        url = _URL_PLD.format(recurso=recurso)
+    url = _urls_por_ano().get(ano)
+    if url is not None:
         for baixar in (_baixar_httpx, _baixar_curl, _baixar_requests):
             conteudo = baixar(url)
             if conteudo is None:
@@ -208,6 +268,11 @@ def baixar_pld_nordeste(ano: int) -> pd.DataFrame | None:
             if pld is not None:
                 return pld
     return _pld_do_arquivo_local(ano)
+
+
+def anos_disponiveis() -> list[int]:
+    """Anos com PLD publicado, do mais recente para o mais antigo."""
+    return sorted(_urls_por_ano(), reverse=True)
 
 
 def anexar_pld(df_coff: pd.DataFrame, df_pld: pd.DataFrame | None) -> pd.DataFrame:
