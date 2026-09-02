@@ -99,14 +99,76 @@ def _icone_data_uri(caminho: str, cor_hex: str) -> str:
     return f"data:image/png;base64,{b64}"
 
 
-def _icone_customizado(caminho: Path, cor_hex: str, tamanho: int) -> folium.CustomIcon:
+# Fator de escala aplicado por zoom aos ícones (classe .marcador-escala) — ver
+# _script_escala_icones(). Base no zoom 7 (zoom_start); cresce ~35%/nível até 2,6x.
+_ESCALA_ICONE_BASE_ZOOM = 7
+_ESCALA_ICONE_PASSO = 1.35
+_ESCALA_ICONE_MAX = 2.6
+
+
+def _icone_customizado(caminho: Path, cor_hex: str, tamanho: int) -> folium.DivIcon:
+    """Ícone PNG tingido embutido como fundo de um ``<div class="marcador-escala">``.
+
+    Usa ``DivIcon`` em vez de ``CustomIcon`` para que o JS de
+    ``_script_escala_icones`` possa aplicar ``transform: scale()`` na div
+    interna sem colidir com o ``transform: translate3d(...)`` que o Leaflet
+    põe no elemento de posicionamento — assim o ícone acompanha o zoom em
+    vez de encolher em relação ao mapa.
+    """
     rgba = _tingir_icone_array(str(caminho), cor_hex)
     alt_px, larg_px = rgba.shape[0], rgba.shape[1]
     altura = max(1, round(tamanho * alt_px / larg_px))  # preserva a proporção real do ícone
-    return folium.CustomIcon(
-        icon_image=_icone_data_uri(str(caminho), cor_hex),
-        icon_size=(tamanho, altura),
+    uri = _icone_data_uri(str(caminho), cor_hex)
+    html = (
+        f'<div class="marcador-escala" style="width:{tamanho}px;height:{altura}px;'
+        f"background:url('{uri}') center/contain no-repeat;"
+        'transform-origin:50% 50%;transition:transform .12s ease-out;"></div>'
     )
+    return folium.DivIcon(
+        html=html,
+        icon_size=(tamanho, altura),
+        icon_anchor=(tamanho // 2, altura // 2),
+        class_name="marcador-escala-wrap",
+    )
+
+
+def _script_escala_icones() -> folium.Element:
+    """CSS + JS: mantém os marcadores (.marcador-escala) acima das linhas e
+    faz o ícone crescer com o zoom, dentro de limites."""
+    js = f"""
+    <style>
+      .leaflet-marker-pane {{ z-index: 640; }}
+      .marcador-escala {{ will-change: transform; }}
+    </style>
+    <script>
+    (function () {{
+      function acharMapa() {{
+        for (var k in window) {{
+          try {{
+            if (k.slice(0, 4) === 'map_' && window[k] instanceof L.Map) return window[k];
+          }} catch (e) {{}}
+        }}
+        return null;
+      }}
+      function iniciar() {{
+        if (typeof L === 'undefined') return setTimeout(iniciar, 120);
+        var mapa = acharMapa();
+        if (!mapa) return setTimeout(iniciar, 120);
+        var Z0 = {_ESCALA_ICONE_BASE_ZOOM}, PASSO = {_ESCALA_ICONE_PASSO}, MAX = {_ESCALA_ICONE_MAX};
+        function reescalar() {{
+          var f = Math.min(MAX, Math.max(1, Math.pow(PASSO, mapa.getZoom() - Z0)));
+          var els = document.getElementsByClassName('marcador-escala');
+          for (var i = 0; i < els.length; i++) els[i].style.transform = 'scale(' + f.toFixed(3) + ')';
+        }}
+        mapa.on('zoomend', reescalar);
+        mapa.whenReady(reescalar);
+        reescalar();
+      }}
+      iniciar();
+    }})();
+    </script>
+    """
+    return folium.Element(js)
 
 
 def _icone_turbina(cor: str, tamanho: int) -> folium.DivIcon:
@@ -402,6 +464,7 @@ def build_map(
                 icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
+                z_index_offset=1000,
             ).add_to(m)
 
         # Subestações do cadastro do ONS que são ponta de linha mas não estão
@@ -431,6 +494,7 @@ def build_map(
                 icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
+                z_index_offset=1000,
             ).add_to(m)
 
     for _, row in df_conjuntos.iterrows():
@@ -460,6 +524,7 @@ def build_map(
             icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _COR_CONJUNTOS, _TAMANHO_ICONE_CONJUNTO),
             tooltip=row["conjunto"],
             popup=folium.Popup(popup_html, max_width=300),
+            z_index_offset=1000,
         ).add_to(m)
 
     if camadas["usinas"] and df_usinas is not None and not df_usinas.empty:
@@ -485,6 +550,8 @@ def build_map(
 
     if camadas["linhas_transmissao"] or camadas["linhas_conexao"]:
         m.get_root().html.add_child(folium.Element(_legenda_tensao_html()))
+
+    m.get_root().html.add_child(_script_escala_icones())
 
     return m
 
