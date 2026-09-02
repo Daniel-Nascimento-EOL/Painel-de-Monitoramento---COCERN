@@ -8,3 +8,6 @@ shapely>=2.0
 pillow>=10.0
 requests>=2.31
 numpy>=1.26
+staticmap>=0.5.7
+matplotlib>=3.8
+reportlab>=4.0
