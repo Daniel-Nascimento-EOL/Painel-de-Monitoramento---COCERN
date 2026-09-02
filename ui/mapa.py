@@ -3,9 +3,12 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
+from datetime import date
+
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
 from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
 from viz.map_charts import CAMADAS_PADRAO, build_map_html, df_para_key
+from viz.mapa_estatico import gerar_png_mapa_cache
 
 _ROTULO_CAMADA = {
     "conjuntos": "Conjuntos eólicos",
@@ -15,6 +18,42 @@ _ROTULO_CAMADA = {
     "linhas_conexao": "Linhas de conexão conjunto–SE",
     "cidades": "Cidades de referência",
 }
+
+
+def _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_linhas, df_ses, camadas) -> None:
+    """Botão de gerar/baixar a imagem PNG do mapa com as camadas atuais.
+
+    A geração é sob demanda (baixa tiles do Esri, ~2 s a frio) — só roda
+    quando o usuário clica; o resultado fica em session_state para o
+    ``st.download_button`` seguinte."""
+    col_gerar, col_baixar = st.columns([1, 1])
+    with col_gerar:
+        if st.button("🖼️ Gerar imagem do mapa (PNG)", use_container_width=True):
+            st.session_state["_mapa_png"] = gerar_png_mapa_cache(
+                df_para_key(filtrado),
+                df_para_key(usinas_filtradas),
+                df_para_key(df_bays),
+                df_para_key(df_cidades),
+                df_para_key(df_linhas),
+                df_para_key(df_ses),
+                tuple(sorted(camadas.items())),
+                largura=1600,
+                altura=1100,
+            )
+    png = st.session_state.get("_mapa_png")
+    if png:
+        with col_baixar:
+            st.download_button(
+                "⬇️ Baixar PNG",
+                data=png,
+                file_name=f"mapa_conjuntos_rn_{date.today():%Y%m%d}.png",
+                mime="image/png",
+                use_container_width=True,
+            )
+        st.caption(
+            "Imagem gerada com as camadas marcadas em **Camadas do mapa**. "
+            "Reabra o gerador após mudar filtros ou camadas."
+        )
 
 
 def _municipios_unicos(df) -> list[str]:
@@ -93,6 +132,8 @@ def render() -> None:
         altura=650,
     )
     components.html(mapa_html, height=665, scrolling=False)
+
+    _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_linhas, df_ses, camadas)
 
     with st.expander(f"Tabela de conjuntos ({len(filtrado)})"):
         st.dataframe(

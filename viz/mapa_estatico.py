@@ -241,3 +241,35 @@ def gerar_png_mapa(
     buffer = io.BytesIO()
     imagem.convert("RGB").save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+
+@st.cache_data(show_spinner="Gerando imagem do mapa...")
+def gerar_png_mapa_cache(
+    conjuntos_json: str,
+    usinas_json: str,
+    bays_json: str,
+    cidades_json: str,
+    linhas_json: str,
+    ses_json: str,
+    camadas_itens: tuple,
+    largura: int = 1400,
+    altura: int = 1000,
+) -> bytes:
+    """Versão cacheável de :func:`gerar_png_mapa` — recebe os DataFrames
+    serializados como JSON (chaves estáveis para ``@st.cache_data``), do
+    mesmo modo que ``viz.map_charts.build_map_html``. Evita rebaixar os
+    tiles Esri a cada rerun quando os filtros/camadas não mudaram."""
+    def _ler(js: str) -> pd.DataFrame | None:
+        return pd.read_json(io.StringIO(js), orient="split") if js else None
+
+    return gerar_png_mapa(
+        _ler(conjuntos_json),
+        _ler(usinas_json),
+        _ler(bays_json),
+        _ler(cidades_json),
+        _ler(linhas_json),
+        _ler(ses_json),
+        camadas=dict(camadas_itens),
+        largura=largura,
+        altura=altura,
+    )
