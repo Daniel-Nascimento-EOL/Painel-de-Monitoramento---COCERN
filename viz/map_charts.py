@@ -293,18 +293,31 @@ def build_map(
                 "tensao_max_kv": tensao_max,
             }
 
-    # Índice de coordenadas de TODAS as ~46 subestações do RN no cadastro do
-    # ONS — usado apenas para posicionar as pontas das linhas de transmissão
-    # (o dataset de linhas não traz geometria, só os nomes das SE de/para).
-    # Parte de bays_por_chave e completa com as SE que não estão no painel.
+    # Índice de coordenadas de TODAS as subestações do RN no cadastro do ONS —
+    # usado para posicionar as pontas das linhas de transmissão (o dataset de
+    # linhas não traz geometria, só os nomes das SE de/para) e para dar
+    # marcador às SE que recebem linha mas não estão em bays.xlsx.
     ses_por_chave: dict[str, tuple] = {
         chave: dados["pos"] for chave, dados in bays_por_chave.items()
     }
+    ses_ons_por_chave: dict[str, dict] = {}
     if df_ses is not None and not df_ses.empty:
         for _, row in df_ses.iterrows():
             ses_por_chave.setdefault(
                 row["chave_subestacao"], (row["latitude"], row["longitude"])
             )
+            if row["chave_subestacao"] not in bays_por_chave:
+                ses_ons_por_chave[row["chave_subestacao"]] = row.to_dict()
+
+    # Conjunto das SE que são ponta de alguma linha desenhável — usado para
+    # dar marcador (ainda que discreto) a toda SE que recebe linha, evitando
+    # linhas que "terminam no vazio".
+    ses_com_linha: set[str] = set()
+    if df_linhas is not None and not df_linhas.empty:
+        for _, ln in df_linhas.iterrows():
+            if ln["chave_de"] in ses_por_chave and ln["chave_para"] in ses_por_chave:
+                ses_com_linha.add(ln["chave_de"])
+                ses_com_linha.add(ln["chave_para"])
 
     # Linhas de transmissão do ONS (>= 230 kV) — reta subestação -> subestação
     # (o dataset não traz geometria), coloridas pelo nível de tensão da linha.
@@ -370,6 +383,40 @@ def build_map(
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
                 icon=_icone_customizado(ICONS_DIR / "logo_se.jpeg", _COR_SUBESTACAO, 26),
+                tooltip=f"{nome_se} · {tensao_txt}",
+                popup=folium.Popup(popup_html, max_width=260),
+            ).add_to(m)
+
+        # Subestações do cadastro do ONS que são ponta de linha mas não estão
+        # em bays.xlsx (majoritariamente SE coletoras de complexos eólicos e
+        # SE da rede básica não listadas pelo cliente). Marcador discreto —
+        # círculo pequeno na cor de subestação — só para a linha não terminar
+        # no vazio. Não recebem linha de conexão (essa continua só nas do cliente).
+        for chave, se in ses_ons_por_chave.items():
+            if chave not in ses_com_linha:
+                continue
+            tensoes = se.get("tensoes_kv")
+            if isinstance(tensoes, (list, tuple)) and len(tensoes):
+                tensao_txt = " / ".join(f"{int(t)}" for t in tensoes) + " kV"
+            else:
+                tensao_txt = "—"
+            nome_se = _nome_subestacao(se["nom_subestacao"])
+            popup_html = (
+                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
+                f"<b>{nome_se}</b><br>"
+                f"Níveis de tensão: {tensao_txt}<br>"
+                f'Agente: {se.get("agente_principal", "—")}<br>'
+                f'<span style="color:#8b939c;font-size:11px;">Fonte: cadastro ONS '
+                f"(não consta em bays.xlsx)</span></div>"
+            )
+            folium.CircleMarker(
+                location=[se["latitude"], se["longitude"]],
+                radius=4,
+                color=_COR_SUBESTACAO,
+                weight=1.5,
+                fill=True,
+                fill_color="#ffffff",
+                fill_opacity=1,
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
             ).add_to(m)
