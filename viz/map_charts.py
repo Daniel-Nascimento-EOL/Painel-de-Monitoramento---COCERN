@@ -428,7 +428,7 @@ def build_map(
             )
             folium.Marker(
                 location=[se["latitude"], se["longitude"]],
-                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 18),
+                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
                 tooltip=f"{nome_se} · {tensao_txt}",
                 popup=folium.Popup(popup_html, max_width=260),
             ).add_to(m)
