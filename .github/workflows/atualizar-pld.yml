@@ -1,0 +1,81 @@
+name: Atualizar série de PLD
+
+# Mantém data/historico_pld_ne.csv em dia com o portal da CCEE.
+#
+# Por que existe: a CCEE bloqueia o IP de saída do Streamlit Community
+# Cloud, então em produção o painel lê o CSV versionado em vez da web. Sem
+# esta rotina, os meses publicados depois do último commit aparecem sem
+# impacto financeiro no painel público.
+#
+# Se o runner do GitHub também estiver bloqueado, o job falha com a
+# mensagem de diagnóstico do passo "Diagnóstico de acesso à CCEE" — nesse
+# caso resta rodar scripts/atualizar_pld_local.py na máquina local antes de
+# cada deploy, ou hospedar o painel fora do Streamlit Cloud.
+
+on:
+  schedule:
+    # Toda segunda-feira às 09:00 UTC (06:00 em Brasília).
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Instalar dependências
+        run: pip install pandas httpx requests
+
+      - name: Diagnóstico de acesso à CCEE
+        run: |
+          echo "IP de saída deste runner:"
+          curl -sS --max-time 30 https://api.ipify.org || echo "(não foi possível determinar)"
+          echo
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          from core.ccee_pld import _URL_CATALOGO, _baixar_httpx, _baixar_curl, _baixar_requests
+
+          resultados = {
+              nome: (b(_URL_CATALOGO) is not None)
+              for nome, b in (
+                  ("httpx", _baixar_httpx),
+                  ("curl", _baixar_curl),
+                  ("requests", _baixar_requests),
+              )
+          }
+          for nome, ok in resultados.items():
+              print(f"  {nome:9} {'acessa' if ok else 'BLOQUEADO'}")
+
+          if not any(resultados.values()):
+              print(
+                  "\nA CCEE bloqueia o IP deste runner por todos os transportes.\n"
+                  "A atualizacao automatica nao e viavel aqui: rode\n"
+                  "scripts/atualizar_pld_local.py na maquina local antes de cada deploy,\n"
+                  "ou hospede o painel fora do Streamlit Community Cloud."
+              )
+              raise SystemExit(1)
+          PY
+
+      - name: Atualizar a série
+        run: python scripts/atualizar_pld_local.py
+
+      - name: Commitar se houver mudança
+        run: |
+          if git diff --quiet -- data/historico_pld_ne.csv; then
+            echo "Série já estava atualizada — nada a commitar."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/historico_pld_ne.csv
+          git commit -m "chore: atualiza a serie de PLD do Nordeste (CCEE)"
+          git push
