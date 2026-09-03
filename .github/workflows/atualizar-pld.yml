@@ -32,12 +32,13 @@ jobs:
           python-version: "3.13"
 
       - name: Instalar dependências
-        run: pip install pandas httpx requests
+        # streamlit entra por causa dos decoradores de cache em core/ccee_pld.py.
+        run: pip install pandas httpx requests streamlit
 
       - name: Diagnóstico de acesso à CCEE
         run: |
-          echo "IP de saída deste runner:"
-          curl -sS --max-time 30 https://api.ipify.org || echo "(não foi possível determinar)"
+          echo -n "IP de saída deste runner: "
+          curl -sS --max-time 30 https://api.ipify.org 2>&1 || echo "(indeterminado)"
           echo
           python - <<'PY'
           import sys
