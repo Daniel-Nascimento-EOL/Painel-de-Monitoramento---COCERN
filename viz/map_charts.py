@@ -43,6 +43,11 @@ _COR_LINHA_CONEXAO = "#9aa5b1"
 # Ícone do marcador de conjunto — tamanho fixo (sem proporcionalidade à qtd. de usinas).
 _TAMANHO_ICONE_CONJUNTO = 24
 
+# Altura máxima do conteúdo da ficha do conjunto. Com as metodologias
+# secundárias recolhidas a ficha cabe inteira nesta altura; ao expandi-las, o
+# excedente rola dentro do balão em vez de sair da área do mapa (650 px).
+_ALTURA_MAXIMA_FICHA = 520
+
 
 def _nome_subestacao(nome: str) -> str:
     """Nome de exibição da subestação: 'SE ' + grafia por extenso, sem nível
@@ -150,6 +155,19 @@ def _script_escala_icones() -> folium.Element:
     <style>
       .leaflet-marker-pane {{ z-index: 640; }}
       .marcador-escala {{ will-change: transform; }}
+      /* A ficha do conjunto lista as 5 metodologias duas vezes (energia e
+         impacto) e ficava mais alta que o mapa, saindo da tela — o Leaflet
+         só reposiciona (autoPan) o popup que cabe. Limita a altura e deixa
+         o excedente rolar dentro do próprio balão. */
+      .ficha-conjunto {{
+        min-width: 250px;
+        max-width: 290px;
+        max-height: {_ALTURA_MAXIMA_FICHA}px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: 4px;
+      }}
+      .leaflet-popup-content {{ margin: 10px 12px; }}
     </style>
     <script>
     (function () {{
@@ -299,29 +317,43 @@ def _secao_titulo(texto: str) -> str:
 def _bloco_metodologias(
     acumulado: dict | None, prefixo: str, unidade: str, casas: int, moeda: bool = False
 ) -> str:
-    """Lista o valor de cada uma das 5 metodologias, uma por linha.
+    """Valor de cada uma das 5 metodologias.
+
+    A metodologia de referência fica sempre visível; as demais entram num
+    ``<details>`` recolhido — as duas listas completas (energia e impacto)
+    deixavam a ficha mais alta que o mapa, empurrando os documentos
+    associados para fora da área visível.
 
     ``acumulado`` é a linha do conjunto no agregado de ``core/coff_cache.py``;
     ``None`` (ou valores ausentes) rende um traço, para que a ficha continue
     legível quando o ONS ou a CCEE não responderem. Com ``moeda``, a unidade
     prefixa o número (``R$ 1.234,56``) em vez de segui-lo.
     """
-    linhas = []
-    for n in sorted(METODOLOGIAS):
+
+    def linha(n: int, destacada: bool) -> str:
         valor = None if acumulado is None else acumulado.get(f"{prefixo}{n}")
         if valor is None or pd.isna(valor):
             texto = "—"
         else:
             numero = _numero_br(float(valor), casas)
             texto = f"{unidade} {numero}" if moeda else f"{numero} {unidade}"
-        destaque = "font-weight:600; color:#2a3542;" if n == METODOLOGIA_PADRAO else "color:#5b6570;"
-        rotulo = f"Metodologia [{n}]" + (" · referência" if n == METODOLOGIA_PADRAO else "")
-        linhas.append(
+        estilo = "font-weight:600; color:#2a3542;" if destacada else "color:#5b6570;"
+        rotulo = f"Metodologia [{n}]" + (" · referência" if destacada else "")
+        return (
             '<div style="display:flex; justify-content:space-between; gap:10px; '
-            f'font-size:11.5px; {destaque} line-height:1.65;">'
+            f'font-size:11.5px; {estilo} line-height:1.65;">'
             f"<span>{rotulo}</span><span>{texto}</span></div>"
         )
-    return "".join(linhas)
+
+    secundarias = [n for n in sorted(METODOLOGIAS) if n != METODOLOGIA_PADRAO]
+    return (
+        linha(METODOLOGIA_PADRAO, destacada=True)
+        + '<details style="margin-top:2px;">'
+        '<summary style="font-size:10.5px; color:#8b939c; cursor:pointer; '
+        'list-style:none; outline:none;">demais metodologias</summary>'
+        + "".join(linha(n, destacada=False) for n in secundarias)
+        + "</details>"
+    )
 
 
 def _bloco_documentos(codigo_ajustamento) -> str:
@@ -588,7 +620,7 @@ def build_map(
             break
         acumulado = (acumulado_coff or {}).get(row.get("id_ons"))
         popup_html = (
-            '<div style="min-width:250px; max-width:290px;">'
+            '<div class="ficha-conjunto">'
             f"<div style=\"font-family: Georgia, 'Times New Roman', serif; font-size:15px; "
             f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
             f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:#5b6570; '
