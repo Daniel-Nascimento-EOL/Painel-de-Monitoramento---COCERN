@@ -5,6 +5,7 @@ import streamlit.components.v1 as components
 
 from datetime import date
 
+from core.coff_cache import acumulado_do_ano
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
 from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
 from viz.map_charts import CAMADAS_PADRAO, build_map_html, df_para_key
@@ -74,11 +75,22 @@ def render() -> None:
     except Exception:
         df_linhas = None
     try:
-        # Índice completo de SE do RN (46) — só para posicionar as pontas das
-        # linhas de transmissão; os marcadores de SE continuam vindo de bays.xlsx.
+        # Índice das SE de transmissão do RN — posiciona as pontas das linhas
+        # de transmissão; os marcadores de SE continuam vindo de bays.xlsx.
         df_ses = baixar_subestacoes_rn()
     except Exception:
         df_ses = None
+
+    # Acumulado de constrained-off do ano corrente, exibido na ficha de cada
+    # conjunto. Servido do cache em disco (core/coff_cache.py); uma falha do
+    # ONS/CCEE apenas deixa a ficha sem os números, sem derrubar o mapa.
+    ano_acumulado = date.today().year
+    try:
+        df_acumulado, meses_acumulados = acumulado_do_ano(
+            ano_acumulado, somente_consolidados=True
+        )
+    except Exception:
+        df_acumulado, meses_acumulados = None, []
 
     st.markdown("## Mapa de Conjuntos Eólicos — Rio Grande do Norte")
     st.caption(
@@ -130,8 +142,25 @@ def render() -> None:
         df_para_key(df_ses),
         tuple(sorted(camadas.items())),
         altura=650,
+        acumulado_json=df_para_key(
+            df_acumulado.reset_index() if df_acumulado is not None else None
+        ),
+        rotulo_periodo=f" em {ano_acumulado}",
     )
     components.html(mapa_html, height=665, scrolling=False)
+
+    if meses_acumulados:
+        primeiro, ultimo = meses_acumulados[0], meses_acumulados[-1]
+        st.caption(
+            f"Os acumulados na ficha de cada conjunto cobrem "
+            f"{primeiro[1]:02d}/{primeiro[0]} a {ultimo[1]:02d}/{ultimo[0]} "
+            f"({len(meses_acumulados)} meses) · Fontes: ONS (constrained-off) e CCEE (PLD horário)"
+        )
+    else:
+        st.caption(
+            "Acumulado de constrained-off indisponível no momento — "
+            "a ficha do conjunto exibe apenas os dados cadastrais."
+        )
 
     _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_linhas, df_ses, camadas)
 

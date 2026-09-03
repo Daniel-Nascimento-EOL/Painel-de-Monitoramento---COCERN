@@ -3,7 +3,6 @@
 import base64
 import io
 import json
-import re
 from pathlib import Path
 
 import folium
@@ -13,7 +12,10 @@ import streamlit as st
 from PIL import Image
 from shapely.geometry import shape
 
-from core.ons_rede import cor_tensao
+from core.agentes import classe_css_logos, classe_logo, separar_agentes
+from core.documentos_ons import documentos_do_conjunto
+from core.ons_coff import METODOLOGIA_PADRAO, METODOLOGIAS
+from core.ons_rede import cor_tensao, nome_exibicao_subestacao
 
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 ICONS_DIR = Path(__file__).resolve().parent.parent / "data" / "icons"
@@ -43,9 +45,9 @@ _TAMANHO_ICONE_CONJUNTO = 24
 
 
 def _nome_subestacao(nome: str) -> str:
-    """Garante o prefixo 'SE ' no nome da subestação (ex.: 'Açu II' -> 'SE Açu II')."""
-    nome = str(nome).strip()
-    return nome if re.match(r"^SE\s+", nome, flags=re.IGNORECASE) else f"SE {nome}"
+    """Nome de exibição da subestação: 'SE ' + grafia por extenso, sem nível
+    de tensão (que aparece só na ficha). Ex.: 'CARAÚBAS II' -> 'SE Caraúbas II'."""
+    return nome_exibicao_subestacao(nome)
 
 
 # Os ícones de origem são 512x512 mas renderizam a ~24 px no mapa. Redimensionar
@@ -233,33 +235,108 @@ def _mascara_fora_rn(contorno: dict) -> dict:
 _FONTE_TEXTO = "-apple-system, 'Segoe UI', Arial, sans-serif"
 
 
-def _linha_agente(rotulo: str, nome, url_logo, cor_avatar: str) -> str:
-    """Linha com avatar (logo da empresa, ou inicial do nome se não houver
-    logo) + rótulo pequeno em caixa alta + nome do agente."""
-    nome = "" if pd.isna(nome) else str(nome).strip()
-    if not pd.isna(url_logo) and str(url_logo).strip():
-        avatar = (
+def _avatar_agente(nome: str, cor_avatar: str) -> str:
+    """Quadro com a logomarca do agente; se não houver arquivo local, um
+    quadro colorido com a inicial do nome."""
+    classe = classe_logo(nome)
+    if classe:
+        return (
             '<div style="width:34px; height:34px; flex-shrink:0; border-radius:8px; '
             'background:#f4f5f7; display:flex; align-items:center; justify-content:center; '
             'overflow:hidden;">'
-            f'<img src="{url_logo}" style="max-width:28px; max-height:28px; object-fit:contain;">'
+            f'<div class="logo-agente {classe}"></div>'
             "</div>"
         )
-    else:
-        inicial = (nome[:1] if nome else "?").upper()
-        avatar = (
-            f'<div style="width:34px; height:34px; flex-shrink:0; border-radius:8px; background:{cor_avatar}; '
-            'display:flex; align-items:center; justify-content:center; color:#fff; '
-            f'font-size:14px; font-weight:600;">{inicial}</div>'
-        )
+    inicial = (nome[:1] if nome else "?").upper()
     return (
-        '<div style="display:flex; align-items:center; gap:9px; margin-bottom:7px;">'
-        f"{avatar}"
-        '<div style="line-height:1.3;">'
-        f'<div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#9aa5b1;">{rotulo}</div>'
-        f'<div style="font-size:12.5px; color:#2a3542; font-weight:500;">{nome or "—"}</div>'
-        "</div></div>"
+        f'<div style="width:34px; height:34px; flex-shrink:0; border-radius:8px; background:{cor_avatar}; '
+        'display:flex; align-items:center; justify-content:center; color:#fff; '
+        f'font-size:14px; font-weight:600;">{inicial}</div>'
     )
+
+
+def _bloco_agentes(rotulo: str, valor, cor_avatar: str) -> str:
+    """Bloco da ficha com todos os agentes de um papel (proprietário ou
+    operador), cada um com sua logomarca.
+
+    O campo da planilha admite co-propriedade separada por barra (ex.:
+    ``'Voltalia Energia do Brasil / Copel / Toda Energia do Brasil'``); os três
+    são listados, em vez de uma logomarca só para o conjunto.
+    """
+    agentes = separar_agentes(valor)
+    if not agentes:
+        agentes = [""]
+    rotulo_final = rotulo + ("es" if len(agentes) > 1 and rotulo.endswith("or") else "")
+    linhas = "".join(
+        '<div style="display:flex; align-items:center; gap:9px; margin-bottom:6px;">'
+        f"{_avatar_agente(nome, cor_avatar)}"
+        f'<div style="font-size:12.5px; color:#2a3542; font-weight:500; line-height:1.3;">'
+        f'{nome or "—"}</div></div>'
+        for nome in agentes
+    )
+    return (
+        '<div style="margin-bottom:8px;">'
+        f'<div style="font-family:{_FONTE_TEXTO}; font-size:10px; text-transform:uppercase; '
+        f'letter-spacing:.04em; color:#9aa5b1; margin-bottom:5px;">{rotulo_final}</div>'
+        f"{linhas}</div>"
+    )
+
+
+def _numero_br(valor: float, casas: int = 2) -> str:
+    """Formata no padrão brasileiro: milhar com ponto, decimal com vírgula."""
+    inteiro, _, decimal = f"{valor:,.{casas}f}".partition(".")
+    inteiro = inteiro.replace(",", ".")
+    return f"{inteiro},{decimal}" if decimal else inteiro
+
+
+def _secao_titulo(texto: str) -> str:
+    return (
+        f'<div style="font-family:{_FONTE_TEXTO}; font-size:10px; text-transform:uppercase; '
+        f'letter-spacing:.04em; color:#9aa5b1; margin:9px 0 5px;">{texto}</div>'
+    )
+
+
+def _bloco_metodologias(
+    acumulado: dict | None, prefixo: str, unidade: str, casas: int, moeda: bool = False
+) -> str:
+    """Lista o valor de cada uma das 5 metodologias, uma por linha.
+
+    ``acumulado`` é a linha do conjunto no agregado de ``core/coff_cache.py``;
+    ``None`` (ou valores ausentes) rende um traço, para que a ficha continue
+    legível quando o ONS ou a CCEE não responderem. Com ``moeda``, a unidade
+    prefixa o número (``R$ 1.234,56``) em vez de segui-lo.
+    """
+    linhas = []
+    for n in sorted(METODOLOGIAS):
+        valor = None if acumulado is None else acumulado.get(f"{prefixo}{n}")
+        if valor is None or pd.isna(valor):
+            texto = "—"
+        else:
+            numero = _numero_br(float(valor), casas)
+            texto = f"{unidade} {numero}" if moeda else f"{numero} {unidade}"
+        destaque = "font-weight:600; color:#2a3542;" if n == METODOLOGIA_PADRAO else "color:#5b6570;"
+        rotulo = f"Metodologia [{n}]" + (" · referência" if n == METODOLOGIA_PADRAO else "")
+        linhas.append(
+            '<div style="display:flex; justify-content:space-between; gap:10px; '
+            f'font-size:11.5px; {destaque} line-height:1.65;">'
+            f"<span>{rotulo}</span><span>{texto}</span></div>"
+        )
+    return "".join(linhas)
+
+
+def _bloco_documentos(codigo_ajustamento) -> str:
+    """Documentos normativos do ONS vinculados ao conjunto, como links."""
+    documentos = documentos_do_conjunto(codigo_ajustamento)
+    if not documentos:
+        return ""
+    itens = "".join(
+        f'<div style="font-size:11.5px; line-height:1.7;">'
+        f'<a href="{doc["url"]}" target="_blank" rel="noopener" '
+        f'style="color:#3b5166; text-decoration:underline;" title="{doc["titulo"]}">'
+        f'{doc["codigo"]}</a></div>'
+        for doc in documentos
+    )
+    return _secao_titulo("Documentos associados") + itens
 
 
 # Camadas do mapa que o usuário pode ligar/desligar no filtro da sidebar.
@@ -304,7 +381,12 @@ def build_map(
     df_linhas: pd.DataFrame | None = None,
     df_ses: pd.DataFrame | None = None,
     camadas: dict[str, bool] | None = None,
+    acumulado_coff: dict | None = None,
+    rotulo_periodo: str = "",
 ) -> folium.Map:
+    """``acumulado_coff`` mapeia ``id_ons`` para o acumulado de energia
+    frustrada e impacto financeiro do conjunto (ver ``core/coff_cache.py``);
+    ``rotulo_periodo`` é o sufixo do título da seção (ex.: ' em 2026')."""
     camadas = {**CAMADAS_PADRAO, **(camadas or {})}
     # Basemap: Esri "World Gray Canvas" — estilo claro/minimalista equivalente
     # ao CartoDB positron, servido sem API key e sem marca d'água (o positron
@@ -491,9 +573,7 @@ def build_map(
                 f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
                 f"<b>{nome_se}</b><br>"
                 f"Níveis de tensão: {tensao_txt}<br>"
-                f'Agente: {se.get("agente_principal", "—")}<br>'
-                f'<span style="color:#8b939c;font-size:11px;">Fonte: cadastro ONS '
-                f"(não consta em bays.xlsx)</span></div>"
+                f'Agente: {se.get("agente_principal", "—")}</div>'
             )
             folium.Marker(
                 location=[se["latitude"], se["longitude"]],
@@ -506,30 +586,42 @@ def build_map(
     for _, row in df_conjuntos.iterrows():
         if not camadas["conjuntos"]:
             break
+        acumulado = (acumulado_coff or {}).get(row.get("id_ons"))
         popup_html = (
-            '<div style="min-width:236px; max-width:270px;">'
-            f'<div style="font-family: Georgia, \'Times New Roman\', serif; font-size:15px; '
+            '<div style="min-width:250px; max-width:290px;">'
+            f"<div style=\"font-family: Georgia, 'Times New Roman', serif; font-size:15px; "
             f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
-            f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:#5b6570; line-height:1.55; '
-            'margin-bottom:9px;">'
-            f'{row["municipios"]}<br>'
-            f'{row["qtd_usinas"]} usinas · {row["qtd_aerogeradores"]} aerogeradores · '
-            f'{row["capacidade_mw"]:.2f} MW'
+            f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:#5b6570; '
+            'line-height:1.55; margin-bottom:4px;">'
+            f'{row["municipios"]}'
             "</div>"
             '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
-            + _linha_agente("Agente Proprietário", row["agente_proprietario"], row["logo_proprietario"], _COR_CONJUNTOS)
-            + _linha_agente("Agente Operador", row["agente_operador"], row["logo_operador"], _COR_SUBESTACAO)
+            + _bloco_agentes("Agente Proprietário", row["agente_proprietario"], _COR_CONJUNTOS)
+            + _bloco_agentes("Agente Operador", row["agente_operador"], _COR_SUBESTACAO)
             + '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
-            f'<div style="font-family:{_FONTE_TEXTO}; font-size:11px; color:#8b939c; line-height:1.6;">'
-            f'Ponto de conexão: {row["ponto_conexao"]}<br>'
-            f'Ajustamento Operativo: {row["ajustamento_operativo"]}'
-            "</div></div>"
+            + f'<div style="font-family:{_FONTE_TEXTO}; font-size:11.5px; color:#5b6570; '
+            'line-height:1.7;">'
+            f'Capacidade instalada: <b>{_numero_br(row["capacidade_mw"])} MW</b><br>'
+            f'Aerogeradores: <b>{row["qtd_aerogeradores"]}</b><br>'
+            f'Ponto de conexão: <b>{_nome_subestacao(row["ponto_conexao"])}</b>'
+            "</div>"
+            + _secao_titulo(f"Energia frustrada acumulada{rotulo_periodo}")
+            + f'<div style="font-family:{_FONTE_TEXTO};">'
+            + _bloco_metodologias(acumulado, "energia_frustrada_", "MWh", 2)
+            + "</div>"
+            + _secao_titulo(f"Impacto financeiro acumulado{rotulo_periodo}")
+            + f'<div style="font-family:{_FONTE_TEXTO};">'
+            + _bloco_metodologias(acumulado, "impacto_financeiro_", "R$", 2, moeda=True)
+            + "</div>"
+            + f'<div style="font-family:{_FONTE_TEXTO};">'
+            + _bloco_documentos(row["ajustamento_operativo"])
+            + "</div></div>"
         )
         folium.Marker(
             location=[row["latitude"], row["longitude"]],
             icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _COR_CONJUNTOS, _TAMANHO_ICONE_CONJUNTO),
             tooltip=row["conjunto"],
-            popup=folium.Popup(popup_html, max_width=300),
+            popup=folium.Popup(popup_html, max_width=320),
             z_index_offset=1000,
         ).add_to(m)
 
@@ -557,9 +649,27 @@ def build_map(
     if camadas["linhas_transmissao"] or camadas["linhas_conexao"]:
         m.get_root().html.add_child(folium.Element(_legenda_tensao_html()))
 
+    # CSS com as logomarcas dos agentes — declaradas uma única vez no
+    # documento e referenciadas por classe nas fichas (ver core/agentes.py).
+    if camadas["conjuntos"]:
+        css_logos, _ = classe_css_logos()
+        m.get_root().html.add_child(folium.Element(css_logos))
+
     m.get_root().html.add_child(_script_escala_icones())
 
     return m
+
+
+def _acumulado_para_dict(df: pd.DataFrame | None) -> dict | None:
+    """Converte o acumulado por conjunto em ``{id_ons: {coluna: valor}}``,
+    formato consultado diretamente na montagem de cada ficha.
+
+    O acumulado chega com ``id_ons`` como coluna (e não como índice), porque
+    ``df_para_key`` serializa em ``orient='split'``, que não preserva índice.
+    """
+    if df is None or df.empty or "id_ons" not in df.columns:
+        return None
+    return df.set_index("id_ons").to_dict(orient="index")
 
 
 def df_para_key(df: pd.DataFrame | None) -> str:
@@ -580,6 +690,8 @@ def build_map_html(
     ses_json: str,
     camadas_itens: tuple,
     altura: int = 650,
+    acumulado_json: str = "",
+    rotulo_periodo: str = "",
 ) -> str:
     """Versão cacheável de ``build_map``: recebe DataFrames serializados como
     JSON (chaves estáveis) e devolve o HTML do mapa já renderizado.
@@ -602,6 +714,8 @@ def build_map_html(
         df_linhas=_ler(linhas_json),
         df_ses=_ler(ses_json),
         camadas=dict(camadas_itens),
+        acumulado_coff=_acumulado_para_dict(_ler(acumulado_json)),
+        rotulo_periodo=rotulo_periodo,
     )
     m.get_root().width = "100%"
     m.get_root().height = f"{altura}px"
