@@ -105,7 +105,15 @@ def baixar_subestacoes_rn() -> pd.DataFrame:
         )
         .reset_index()
     )
-    return agregado
+    # Mantém apenas as subestações da rede de transmissão. As coletoras dos
+    # próprios conjuntos eólicos (agente = SPE da usina, ex.: SE JERUSALEM,
+    # SE RIO DO VENTO) duplicariam o marcador do conjunto no mapa.
+    manter = agregado["agente_principal"].apply(_e_transmissora) | agregado[
+        "chave_subestacao"
+    ].isin(_CHAVES_SEMPRE_MANTIDAS)
+    agregado = agregado[manter].copy()
+    agregado["nome_exibicao"] = agregado["nom_subestacao"].apply(nome_exibicao_subestacao)
+    return agregado.reset_index(drop=True)
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner="Baixando linhas de transmissão do ONS...")
@@ -140,3 +148,91 @@ def baixar_linhas_rn() -> pd.DataFrame:
         "tensao_kv", "tipo_rede", "comprimento_km", "agente",
     ]
     return df[colunas].drop_duplicates().reset_index(drop=True)
+
+
+# --- Classificação e nomenclatura das subestações --------------------------
+#
+# O cadastro do ONS mistura, no mesmo arquivo, dois tipos de subestação:
+#
+# 1. Subestações da rede de transmissão, operadas por transmissoras
+#    (Axia Nordeste, Argo, Taesa, Neoenergia, Chesf...) — são as que
+#    interessam ao painel;
+# 2. Subestações coletoras dos próprios conjuntos eólicos, cujo agente
+#    principal é a SPE da usina (ex.: SE JERUSALEM/Statkraft,
+#    SE RIO DO VENTO/CVER, SE ALEGRIA/New Energy). Essas duplicam o
+#    marcador do conjunto e foram excluídas do mapa a pedido do usuário.
+#
+# A distinção é feita pelo agente principal: só entram as subestações cujo
+# agente consta em ``_TRANSMISSORAS`` (comparação por prefixo, sem acento e
+# em caixa alta, porque o ONS grafa razões sociais variadas — 'ARGO VI',
+# 'ARGO ENERGIA TRANSMISSORA' etc.).
+_TRANSMISSORAS = (
+    "AXIA",
+    "ARGO",
+    "TAESA",
+    "NEOENERGIA",
+    "CHESF",
+    "ELETROBRAS",
+    "COSERN",
+    "NEOENERGIA COSERN",
+    "ENERGISA",
+    "DUNAS",  # Dunas Transmissão (SE Caraúbas II)
+    "STATE GRID",
+    "ISA",
+    "CTEEP",
+    "ALUPAR",
+    "LAGOA NOVA",  # SE Currais Novos II — transmissora, apesar do nome de SPE
+)
+
+# Subestações que estão em bays.xlsx (curadoria do cliente) e devem ser
+# mantidas mesmo que o agente principal do ONS não bata com _TRANSMISSORAS.
+_CHAVES_SEMPRE_MANTIDAS = {"CURRAIS NOVOS 2", "SANTA LUZIA 2"}
+
+
+def _e_transmissora(agente) -> bool:
+    """Indica se o agente principal da subestação é uma transmissora."""
+    if agente is None or (isinstance(agente, float) and pd.isna(agente)):
+        return False
+    nome = _sem_acento(str(agente).strip()).upper()
+    return any(nome.startswith(t) for t in _TRANSMISSORAS)
+
+
+# Grafia por extenso das subestações da rede de transmissão. O cadastro do
+# ONS usa caixa alta e abreviações ('J. CAMARA III', 'CURR NOVOS II',
+# 'MOSSORO IV'); o painel exibe 'SE João Câmara III'. A chave é a normalizada
+# por ``_chave_subestacao_ons``.
+_NOME_EXIBICAO_SE = {
+    "ACU 2": "Açu II",
+    "ACU 3": "Açu III",
+    "CARAUBAS 2": "Caraúbas II",
+    "CEARA MIRIM 2": "Ceará Mirim II",
+    "CURRAIS NOVOS 2": "Currais Novos II",
+    "EXTREMOZ 2": "Extremoz II",
+    "JANDAIRA 2": "Jandaíra II",
+    "JOAO CAMARA 2": "João Câmara II",
+    "JOAO CAMARA 3": "João Câmara III",
+    "LAGOA NOVA 2": "Lagoa Nova II",
+    "MONTE VERDE": "Monte Verde",
+    "MOSSORO 2": "Mossoró II",
+    "MOSSORO 4": "Mossoró IV",
+    "NATAL 2": "Natal II",
+    "NATAL 3": "Natal III",
+    "PARAISO": "Paraíso",
+    "RIACHAO 2": "Riachão II",
+    "SANTA LUZIA 2": "Santa Luzia II",
+    "TOUROS": "Touros",
+}
+
+
+def nome_exibicao_subestacao(nome: str) -> str:
+    """Nome da subestação como o painel exibe: 'SE ' + grafia por extenso,
+    sem o nível de tensão (que passa a constar apenas na ficha).
+
+    Ex.: 'J. CAMARA III' -> 'SE João Câmara III'; 'CARAUBAS II' -> 'SE Caraúbas II'.
+    Nomes fora do dicionário caem em ``str.title()`` sobre a grafia do ONS.
+    """
+    bruto = re.sub(r"^SE\s+", "", str(nome).strip(), flags=re.IGNORECASE)
+    chave = _chave_subestacao_ons(bruto)
+    if chave in _NOME_EXIBICAO_SE:
+        return f"SE {_NOME_EXIBICAO_SE[chave]}"
+    return f"SE {bruto.title()}" if bruto.isupper() else f"SE {bruto}"
