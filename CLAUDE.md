@@ -1,7 +1,7 @@
 # Painel de Monitoramento de Constrained-off — Conjuntos Eólicos do RN
 
 > Trabalho acadêmico de mestrado. Guia de referência do projeto para o Claude Code.
-> Última atualização: 2026-08-31.
+> Última atualização: 2026-09-02.
 
 ---
 
@@ -39,10 +39,19 @@ app.py                        ── page_config, CSS global, roteador (radio na
   │     └── viz/mapa_estatico.py   ── mesmo mapa como PNG (staticmap) — download e mini-mapa do PDF
   ├── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia), export PDF
   │     ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
+  │     ├── core/coff_cache.py     ── cache Parquet do COFF agregado por conjunto/mês
   │     ├── core/ccee_pld.py       ── download CCEE (PLD horário NE) com cascata de fallback
   │     ├── core/relatorio_dados.py ── compila o "dossiê" por conjunto (cadastro + SE/linhas + COFF do mês)
   │     └── viz/pdf_relatorio.py    ── relatório PDF consolidado (ReportLab + matplotlib): capa, resumo RN, seção/conjunto
   └── ui/painel_pld.py         ── painel de preço horário: PLD da hora, curva do dia (Ontem/Hoje/Amanhã), evolução recente
+
+core/
+  ├── agentes.py                ── cadastro dos agentes + logomarcas locais
+  └── documentos_ons.py         ── resolve o ajustamento operativo no PDF do MPO
+
+scripts/
+  ├── baixar_logos_agentes.py   ── baixa as logomarcas para data/icons/agentes/
+  └── atualizar_cache_coff.py   ── pré-aquece data/cache_coff/
 
 data/
   ├── localizacao_conjuntos_ons_aneel.xlsx   ── conjuntos: ONS/ANEEL + id_ons, capacidade, ponto de
@@ -52,9 +61,12 @@ data/
   ├── rn_estado.geojson                        ── contorno do RN (IBGE, baixado uma vez)
   ├── historico_pld_ne.csv                     ── PLD horário NE desde 01/01/2021 (fallback offline da
   │                                              CCEE — é o que o deploy usa; ver §2.4 e §6)
+  ├── cache_coff/                              ── Parquet do COFF agregado por conjunto/mês
+  │                                              (~9 KB/mês, versionado — ver §4.4)
   └── icons/
         ├── logo_aero.jpg                      ── ícone de turbina (marcador de conjunto)
-        └── logo_se.jpeg                        ── ícone de subestação (marcador de bay)
+        ├── logo_se.jpeg                        ── ícone de subestação (marcador de bay)
+        └── agentes/                            ── 30 logomarcas oficiais (ver §2.5)
 
 docs/
   └── fontes_dados_abertos.md   ── levantamento de datasets ONS/ANEEL/COSERN
@@ -177,6 +189,45 @@ lacunas.
 
 ---
 
+### 2.5 Logomarcas dos agentes (`core/agentes.py` + `data/icons/agentes/`)
+
+As colunas `Logo - Agente Proprietário` / `Logo - Agente Operador` da
+planilha apontavam para miniaturas do **cache de imagens do Google**
+(`encrypted-tbn0.gstatic.com`). Esses endereços expiram e vinham com a
+marca errada: a **Simm Soluções** aparecia com a logomarca da New Energy
+Options em alguns conjuntos e a da V2i Energia em outros. A coluna do
+operador vinha vazia em boa parte das linhas.
+
+Agora as 30 logomarcas são baixadas da **fonte oficial de cada agente** e
+versionadas em `data/icons/agentes/`, resolvidas por
+`core/agentes.py::logo_agente()`. As colunas de logo da planilha **não são
+mais usadas** — não voltar a lê-las.
+
+- Fonte preferida, nesta ordem: arquivo publicado no site do agente →
+  `logo.dev` pelo domínio institucional → `apple-touch-icon` do site
+  oficial (usado na Echoenergia, cuja logomarca do cabeçalho é SVG
+  embutido no HTML, sem URL própria).
+- **Gotcha do domínio**: `logo.dev` devolve um **monograma genérico** (uma
+  letra) para domínio inexistente, com HTTP 200 — não dá erro. Conferir
+  visualmente ao acrescentar um agente. Foi o que pegou Ibitu
+  (`ibituenergia.com`, não `.com.br`) e V2i (`v2ienergia.com`, não
+  `.com.br`).
+- **New Energy Options** é subsidiária integral da **Multiner** e não tem
+  marca nem domínio próprios ativos — usa a logomarca da Multiner.
+- `LOGOS_FUNDO_ESCURO` lista as marcas brancas (Serveng), gravadas sobre
+  fundo escuro para não sumirem na ficha.
+- Atualizar com `python scripts/baixar_logos_agentes.py`.
+- **Múltiplos agentes**: o campo da planilha admite co-propriedade separada
+  por barra (`Voltalia / Copel / Toda`); `separar_agentes()` divide e a
+  ficha lista todos, cada um com sua logomarca.
+- **Gotcha do peso no HTML**: embutir a `data:` URI em cada uma das 54
+  fichas multiplicava o mesmo base64 (HTML de 660 KB para 4,1 MB).
+  `classe_css_logos()` declara cada logomarca **uma vez** como classe CSS;
+  as fichas referenciam pela classe. Além disso a logomarca é reduzida a
+  64 px antes de codificar (renderiza a ~30 px). HTML final: 951 KB.
+
+---
+
 ## 3. Mapa (Folium) — decisões e gotchas técnicos
 
 Trocado de Plotly pra **Folium/Leaflet** porque o usuário pediu ícone
@@ -207,13 +258,32 @@ suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
 - **Subestações e cidades ficam sempre visíveis** (não passam pelos
   filtros da sidebar) — pedido explícito do usuário via áudio, pra dar
   noção da escassez de subestações de transmissão no RN.
+- **Só entram subestações de transmissão.** O cadastro do ONS mistura as SE
+  da rede de transmissão com as **coletoras dos próprios conjuntos**
+  (agente principal = SPE da usina: SE JERUSALÉM/Statkraft, SE RIO DO
+  VENTO/CVER, SE ALEGRIA/New Energy, CUTIA, GAMELEIRA...), que duplicavam o
+  marcador do conjunto. `core/ons_rede.py::_e_transmissora()` filtra pelo
+  agente principal (prefixo, sem acento, caixa alta) contra
+  `_TRANSMISSORAS`. Restam 17 SE no RN.
+  - **Gotcha**: a SE Currais Novos II é de transmissão mas o ONS registra o
+    agente como "LAGOA NOVA" (nome de SPE) — está em `_TRANSMISSORAS`.
+    Santa Luzia II é da PB, não entra no filtro por `id_estado == "RN"`;
+    vem de `bays.xlsx`. `_CHAVES_SEMPRE_MANTIDAS` cobre as SE curadas pelo
+    cliente cujo agente não bate.
+- **Nome da SE sem nível de tensão**: `nome_exibicao_subestacao()` converte
+  a grafia do ONS (caixa alta e abreviada: `J. CAMARA III`, `CURR NOVOS
+  II`, `CARAUBAS II`) em `SE João Câmara III`, via `_NOME_EXIBICAO_SE`. A
+  tensão saiu do nome e aparece só na ficha.
 - **Linhas de conexão** conjunto→subestação são desenhadas sempre (fixas,
   não só ao clicar/selecionar), estilo neutro, sem diferenciação por nível
   de tensão ainda (falta dado de kV por subestação — próxima melhoria).
-- **Ficha de detalhe**: popup do marcador de conjunto expandido com agente
-  proprietário/operador (+ logo via `<img src="URL">`, linkado externo —
-  não baixamos/hospedamos essas imagens), ponto de conexão, capacidade
-  instalada, qtd. aerogeradores, ajustamento operativo.
+- **Ficha de detalhe do conjunto** (ordem definida pelo usuário): nome ·
+  municípios · Agente(s) Proprietário(s) e Operador(es), **todos** com
+  logomarca (§2.5) · capacidade instalada · qtd. aerogeradores · ponto de
+  conexão (`SE <nome>`) · **energia frustrada acumulada** nas 5
+  metodologias (MWh) · **impacto financeiro acumulado** nas 5 (R$) ·
+  **documentos associados** com link (§4.5). Os acumulados vêm de
+  `core/coff_cache.py` restritos aos meses consolidados — ver §4.4.
 - **Mapa mostra só o RN**: polígono do mundo com um "furo" no formato do RN
   (`_mascara_fora_rn()`), pintado branco por cima do basemap.
 - **Gotcha do buffer**: `shapely.buffer(0.06)` no polígono do RN antes de
@@ -324,7 +394,7 @@ sob demanda (botão), resultado em `st.session_state` para o
 
 ---
 
-## 4.3 Painel de Preço Horário — `ui/painel_pld.py`
+### 4.3 Painel de Preço Horário — `ui/painel_pld.py`
 
 Página inspirada no Painel de Preços da CCEE
 (https://www.ccee.org.br/precos/painel-precos): PLD da hora corrente em
@@ -339,6 +409,58 @@ recente (média diária + faixa mín–máx) em janelas de 30 a 365 dias.
   o mesmo usado no impacto financeiro da Energia Frustrada.
 - Conferido contra o painel da CCEE (02/09/2026, NE): máxima 1.292,46,
   mínima 57,31, média 212,81 R$/MWh.
+
+---
+
+### 4.4 Cache em disco do COFF agregado — `core/coff_cache.py`
+
+Compor o acumulado de um ano exigia baixar um CSV do ONS por mês (o arquivo
+cobre o Brasil inteiro, dezenas de MB) — minutos no primeiro acesso, custo
+que o `@st.cache_data` não evita entre reinícios (frequentes no Streamlit
+Community Cloud).
+
+Como o CSV de um mês fechado é imutável, o **agregado por conjunto** daquele
+mês também é. Fica persistido em `data/cache_coff/coff_{ano}_{mes:02d}.parquet`
+(54 linhas/mês, ~9 KB, versionado no repositório). Não são persistidos os
+dados semi-horários brutos nem os meses ainda em revisão.
+
+- **`_DIAS_ATE_CONSOLIDAR = 15`**: um mês só vai para o disco 15 dias após
+  encerrar — o ONS revisa medições e a CCEE reprocessa o PLD nesse intervalo.
+  Antes disso é recalculado ao vivo (cache de sessão), sem gravar.
+- **`somente_consolidados=True`** (usado pela ficha do mapa) restringe a soma
+  ao que está em disco: **0,8 s** contra **65 s** quando o mês corrente e o
+  recém-encerrado entram ao vivo. A página Energia Frustrada segue mostrando
+  o mês corrente ao vivo.
+- **Por que gravar o impacto financeiro junto, e não só os MWh**: o impacto
+  tem de ser somado hora a hora (`energia × PLD daquela hora`). A energia
+  frustrada se concentra nas horas de PLD baixo, então recompor depois pelo
+  PLD médio superestimaria — o produto das médias não é a média dos produtos.
+- **`VERSAO_AGREGADO`**: gravada no metadata de cada Parquet. **Ao mudar as
+  fórmulas de `calcular_metodologias()` ou a aplicação do PLD, incrementar** —
+  os arquivos de versão anterior passam a ser ignorados e recalculados, em
+  vez de servir número desatualizado indefinidamente.
+- O cache se preenche sozinho conforme o painel é usado;
+  `python scripts/atualizar_cache_coff.py [ano]` apenas pré-aquece antes de
+  um deploy.
+- **`attrs` não sobrevive ao `@st.cache_data`** — por isso os meses efetivamente
+  somados voltam como segundo elemento da tupla, não em `DataFrame.attrs`.
+- **Validação**: jan/2026 dá 831.132,72 MWh tanto pelo cache quanto pelo
+  caminho da página Energia Frustrada (diferença de 2e-10); Baixa do Feijão
+  2024 reproduz mês a mês a série de referência do §4.1.
+
+### 4.5 Documentos do ONS por conjunto — `core/documentos_ons.py`
+
+O `Ajustamento Operativo` da planilha (`AO-CE.NE.2LE`, 50 conjuntos;
+`AO-CE.NE.2NO`, 4) vira link para o PDF no MPO do ONS.
+
+**Gotcha da revisão no nome do arquivo**: o ONS publica com a revisão
+embutida (`AO-CE.NE.2LE_Rev.32.pdf`) e **remove a anterior** ao publicar uma
+nova — URL fixa devolve 404 em poucos meses (foi o que aconteceu com a
+Rev.17 do 2NO, hoje na Rev.20). A revisão vigente é descoberta por sondagem
+`HEAD`, tentando primeiro a `revisao_conhecida` e depois as posteriores
+(cache de 24 h). Se nenhuma responder, o link cai na página de busca do MPO,
+que nunca quebra. Convém atualizar `revisao_conhecida` de tempos em tempos
+para a sondagem seguir barata (~0,3 s).
 
 ---
 
@@ -387,14 +509,17 @@ Já implementados: ficha de detalhe de conjunto, energia frustrada, linhas
 fixas conjunto↔subestação, **linhas coloridas por nível de tensão** (kV do
 cadastro ONS de subestações/linhas), **download PNG do mapa**,
 **relatório PDF consolidado de constrained-off por conjunto**,
-**impacto financeiro pelo PLD real da CCEE** e **painel de preço horário**
-— ver §3, §3.1, §2.4, §4, §4.2 e §4.3.
+**impacto financeiro pelo PLD real da CCEE**, **painel de preço horário**,
+**logomarcas oficiais dos agentes**, **filtro de subestações de transmissão**,
+**acumulados de energia frustrada e impacto financeiro na ficha** e
+**link para os documentos do MPO** — ver §3, §3.1, §2.4, §2.5, §4, §4.2,
+§4.3, §4.4 e §4.5.
 
 Ainda não resolvidos:
 
-1. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
-   operativo, instrução de operação em PDF) — só temos o código do
-   ajustamento operativo (texto), não os PDFs.
+1. **Ficha de detalhe da subestação** com documentos vinculados — o popup da
+   SE já traz nome, níveis de tensão e agente; falta a ficha completa com os
+   PDFs de instrução de operação (não recebidos).
 2. **Domínio próprio e host definitivo**: o Streamlit Community Cloud não
    aceita domínio custom. Para publicar com URL própria, migrar para Render
    (domínio grátis, US$ 7/mês sem hibernação) ou Fly.io (região `gru`, IP
