@@ -140,14 +140,21 @@ Por isso a cascata de transportes acima. Se nada funcionar,
 `baixar_pld_nordeste` retorna `None` e a UI mostra a energia frustrada em
 MWh sem o impacto financeiro, com aviso.
 
-⚠️ **O bloqueio da CCEE pega o Streamlit Community Cloud**: os transportes
-que funcionam na máquina local levam 403 a partir do IP de saída da nuvem.
-Na prática, **em produção o painel lê o fallback offline**
-(`data/historico_pld_ne.csv`), não a web. Consequência: rodar
-`python scripts/atualizar_pld_local.py` e commitar o CSV **antes de cada
-deploy** — senão os meses publicados depois da última atualização aparecem
-sem impacto financeiro no painel público. O script confere as horas em
-comum com a versão anterior e aborta se divergirem.
+**O bloqueio não é por IP** — medido: do IP residencial brasileiro e de um
+runner do GitHub na Azure/EUA (`20.168.159.169`), `httpx` e `curl` (com os
+cabeçalhos completos) passam, e `requests` é barrado nos dois. O que a CCEE
+rejeita é a combinação cabeçalhos + impressão digital TLS.
+
+Por isso a atualização do fallback é automática: o workflow
+`.github/workflows/atualizar-pld.yml` roda `scripts/atualizar_pld_local.py`
+toda segunda-feira e commita o CSV se houver dados novos. Ele começa por um
+diagnóstico que testa os três transportes e falha com orientação explícita
+se algum dia todos forem bloqueados, em vez de commitar uma série velha em
+silêncio.
+
+O script também pode ser rodado à mão (`python scripts/atualizar_pld_local.py`)
+antes de um deploy urgente. Ele confere as horas em comum com a versão
+anterior e aborta se divergirem.
 
 **Por que PLD e não CMO** (a decisão anterior era o inverso — ver histórico
 do commit `491a5a6`): o **CMO** do ONS é o custo marginal de operação, sem
@@ -358,9 +365,14 @@ Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
   na `main`. **O site publicado é o GitHub, não a máquina local** — commit
   sem push não muda nada no painel público (já custou uma sessão inteira
   investigando um valor "errado" que era só código não enviado).
-- **Antes de cada deploy**: rodar `python scripts/atualizar_pld_local.py` e
-  commitar `data/historico_pld_ne.csv`. A CCEE bloqueia o IP da nuvem, então
-  em produção o PLD vem desse arquivo (§2.4).
+- **Série de PLD**: mantida em dia sozinha pelo workflow semanal
+  `.github/workflows/atualizar-pld.yml` (§2.4). Rodar
+  `python scripts/atualizar_pld_local.py` à mão só antes de um deploy
+  urgente com dados recém-publicados.
+- **`gh` CLI**: instalado via `winget install GitHub.cli`, em
+  `C:\Program Files\GitHub CLI\gh.exe`. Autenticado como
+  **Daniel-Nascimento-EOL**. Terminal aberto antes da instalação não vê o
+  binário no PATH — usar o caminho completo ou reabrir o terminal.
 - **Ambiente local Windows**: o Python 3.12 usado originalmente pro `.venv`
   foi desinstalado da máquina em algum momento (venv órfão, "No Python at
   ..."). Recriado com `py -3.13 -m venv .venv`. Se o `.venv` quebrar de
@@ -383,11 +395,10 @@ Ainda não resolvidos:
 1. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
    operativo, instrução de operação em PDF) — só temos o código do
    ajustamento operativo (texto), não os PDFs.
-2. **Fallback offline do PLD precisa ser reatualizado a cada deploy**
-   (§2.4): a CCEE bloqueia o IP do Streamlit Cloud, então em produção o
-   painel lê `data/historico_pld_ne.csv`, não a web. Rodar
-   `python scripts/atualizar_pld_local.py` e commitar antes de publicar.
-   Automatizar depois (GitHub Action mensal, ou outro host sem bloqueio).
+2. **Domínio próprio e host definitivo**: o Streamlit Community Cloud não
+   aceita domínio custom. Para publicar com URL própria, migrar para Render
+   (domínio grátis, US$ 7/mês sem hibernação) ou Fly.io (região `gru`, IP
+   brasileiro). Registrar o domínio em Registro.br ou Cloudflare.
 
 Fontes de dados abertos levantadas (ONS constrained-off, ANEEL SIGA,
 COSERN) em `docs/fontes_dados_abertos.md`.
