@@ -50,8 +50,8 @@ data/
   ├── bays.xlsx                                ── subestações do RN/PB (agente operador, lat/long) e
   │                                              cidades de referência
   ├── rn_estado.geojson                        ── contorno do RN (IBGE, baixado uma vez)
-  ├── historico_pld_ne.csv                     ── PLD horário NE 17/10/2021–07/07/2025 (fallback offline
-  │                                              da CCEE; extraído da planilha do estudo de referência)
+  ├── historico_pld_ne.csv                     ── PLD horário NE desde 01/01/2021 (fallback offline da
+  │                                              CCEE — é o que o deploy usa; ver §2.4 e §6)
   └── icons/
         ├── logo_aero.jpg                      ── ícone de turbina (marcador de conjunto)
         └── logo_se.jpeg                        ── ícone de subestação (marcador de bay)
@@ -136,11 +136,18 @@ pareçam de navegador, em **duas camadas independentes**:
    (urllib3) leva 403 — o handshake não parece de navegador. `httpx` e o
    binário `curl` passam.
 
-Por isso a cascata de transportes acima. O fallback offline
-(`data/historico_pld_ne.csv`, série 17/10/2021–07/07/2025 extraída da
-planilha do estudo de referência) é o último recurso; se nada funcionar,
+Por isso a cascata de transportes acima. Se nada funcionar,
 `baixar_pld_nordeste` retorna `None` e a UI mostra a energia frustrada em
 MWh sem o impacto financeiro, com aviso.
+
+⚠️ **O bloqueio da CCEE pega o Streamlit Community Cloud**: os transportes
+que funcionam na máquina local levam 403 a partir do IP de saída da nuvem.
+Na prática, **em produção o painel lê o fallback offline**
+(`data/historico_pld_ne.csv`), não a web. Consequência: rodar
+`python scripts/atualizar_pld_local.py` e commitar o CSV **antes de cada
+deploy** — senão os meses publicados depois da última atualização aparecem
+sem impacto financeiro no painel público. O script confere as horas em
+comum com a versão anterior e aborta se divergirem.
 
 **Por que PLD e não CMO** (a decisão anterior era o inverso — ver histórico
 do commit `491a5a6`): o **CMO** do ONS é o custo marginal de operação, sem
@@ -347,10 +354,13 @@ Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
   `user.email marcos.danielns@outlook.com`.
 - Push feito via `gh` CLI logado como conta **Kevinael** (colaborador
   adicionado pelo Daniel, dono do repo).
-- **Streamlit Community Cloud**: deploy travado (GitHub App do Streamlit
-  sem acesso ao repo privado). Fix pendente: Daniel precisa liberar acesso
-  em https://github.com/settings/installations → app **Streamlit** →
-  Configure → repo `Painel-de-Monitoramento---COCERN`.
+- **Streamlit Community Cloud**: deploy ativo, atualiza sozinho a cada push
+  na `main`. **O site publicado é o GitHub, não a máquina local** — commit
+  sem push não muda nada no painel público (já custou uma sessão inteira
+  investigando um valor "errado" que era só código não enviado).
+- **Antes de cada deploy**: rodar `python scripts/atualizar_pld_local.py` e
+  commitar `data/historico_pld_ne.csv`. A CCEE bloqueia o IP da nuvem, então
+  em produção o PLD vem desse arquivo (§2.4).
 - **Ambiente local Windows**: o Python 3.12 usado originalmente pro `.venv`
   foi desinstalado da máquina em algum momento (venv órfão, "No Python at
   ..."). Recriado com `py -3.13 -m venv .venv`. Se o `.venv` quebrar de
@@ -373,10 +383,11 @@ Ainda não resolvidos:
 1. **Ficha de detalhe da subestação** com documentos vinculados (ajuste
    operativo, instrução de operação em PDF) — só temos o código do
    ajustamento operativo (texto), não os PDFs.
-2. **Fallback offline do PLD envelhece**: `data/historico_pld_ne.csv` cobre
-   até 07/07/2025. Se a CCEE ficar inacessível por muito tempo, meses
-   recentes ficam sem impacto financeiro. Só importa se a web cair — a
-   descoberta pelo catálogo (§2.4) já absorve anos novos sozinha.
+2. **Fallback offline do PLD precisa ser reatualizado a cada deploy**
+   (§2.4): a CCEE bloqueia o IP do Streamlit Cloud, então em produção o
+   painel lê `data/historico_pld_ne.csv`, não a web. Rodar
+   `python scripts/atualizar_pld_local.py` e commitar antes de publicar.
+   Automatizar depois (GitHub Action mensal, ou outro host sem bloqueio).
 
 Fontes de dados abertos levantadas (ONS constrained-off, ANEEL SIGA,
 COSERN) em `docs/fontes_dados_abertos.md`.

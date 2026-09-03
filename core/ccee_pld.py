@@ -15,8 +15,10 @@ Cadeia de fontes (a web é sempre a principal)
 2. **Download do CSV do ano** por três transportes: httpx → curl → requests
    (ver a seção sobre o bloqueio, abaixo).
 3. **Fallback offline**: ``data/historico_pld_ne.csv``, série de PLD horário
-   do Nordeste de 17/10/2021 a 07/07/2025, extraída da planilha do estudo de
-   referência. Só entra em cena se a web estiver inacessível.
+   do Nordeste desde 01/01/2021, gerada a partir do próprio portal da CCEE.
+   Entra em cena quando a web está inacessível — o que acontece de fato no
+   Streamlit Community Cloud, cujo IP a CCEE bloqueia. Reatualizar com
+   ``scripts/atualizar_pld_local.py`` sempre que houver deploy.
 
 Se nem o fallback cobrir o período, a função devolve None e a UI mostra a
 energia frustrada em MWh sem o impacto financeiro.
