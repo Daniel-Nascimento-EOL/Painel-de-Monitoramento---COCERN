@@ -187,3 +187,8 @@ METODOLOGIAS = {
         "Como [4], mas com a referência recalculada [2] (desvio absoluto) no caso não-REL.",
     ),
 }
+
+
+def meses_do_ano_disponiveis(ano: int) -> list[tuple[int, int]]:
+    """Meses de um ano já publicados pelo ONS, em ordem cronológica."""
+    return sorted(m for m in meses_disponiveis() if m[0] == ano)
