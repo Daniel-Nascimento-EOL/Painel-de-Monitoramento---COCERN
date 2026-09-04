@@ -84,7 +84,7 @@ def _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
     )
     incluir_mapa = st.checkbox("Incluir mini-mapa por conjunto (mais lento)", value=True)
 
-    if st.button("📄 Gerar relatório PDF", type="primary"):
+    if st.button("Gerar relatório PDF", type="primary"):
         alvo_final = tuple(escolha) if escolha else tuple(df_conjuntos["conjunto"])
         rel = montar_relatorio(alvo_final, ano, mes, metodo)
         mapas = {}
