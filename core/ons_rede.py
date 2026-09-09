@@ -116,8 +116,7 @@ def ler_linhas_rn() -> pd.DataFrame:
 # O cadastro do ONS mistura, no mesmo arquivo, dois tipos de subestação:
 #
 # 1. Subestações da rede de transmissão, operadas por transmissoras
-#    (Axia Nordeste, Argo, Taesa, Neoenergia, Chesf...) — são as que
-#    interessam ao painel;
+#    (Axia Nordeste, Argo, Taesa...) — são as que interessam ao painel;
 # 2. Subestações coletoras dos próprios conjuntos eólicos, cujo agente
 #    principal é a SPE da usina (ex.: SE JERUSALEM/Statkraft,
 #    SE RIO DO VENTO/CVER, SE ALEGRIA/New Energy). Essas duplicam o
@@ -127,21 +126,20 @@ def ler_linhas_rn() -> pd.DataFrame:
 # agente consta em ``_TRANSMISSORAS`` (comparação por prefixo, sem acento e
 # em caixa alta, porque o ONS grafa razões sociais variadas — 'ARGO VI',
 # 'ARGO ENERGIA TRANSMISSORA' etc.).
+#
+# A lista traz apenas os agentes efetivamente presentes no cadastro do RN.
+# A versão anterior incluía transmissoras que não operam nada no estado
+# (Chesf, Eletrobras, Cosern, Energisa, State Grid, ISA, CTEEP, Alupar,
+# Neoenergia): nenhuma casava com uma linha sequer do cadastro, e como a
+# comparação é por prefixo, cada entrada morta só aumentava a chance de
+# deixar passar no futuro uma SE que não deveria entrar. Ao acrescentar uma
+# transmissora aqui, conferir antes que ela aparece em
+# ``data/rede/subestacoes_rn.csv`` ou ``linhas_transmissao_rn.csv``.
 _TRANSMISSORAS = (
     "AXIA",
     "ARGO",
     "TAESA",
-    "NEOENERGIA",
-    "CHESF",
-    "ELETROBRAS",
-    "COSERN",
-    "NEOENERGIA COSERN",
-    "ENERGISA",
     "DUNAS",  # Dunas Transmissão (SE Caraúbas II)
-    "STATE GRID",
-    "ISA",
-    "CTEEP",
-    "ALUPAR",
     "LAGOA NOVA",  # SE Currais Novos II — transmissora, apesar do nome de SPE
     "DUNAMIS",  # SE Simplice — idem (operada pela Taesa)
 )
