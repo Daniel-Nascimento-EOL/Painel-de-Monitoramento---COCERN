@@ -78,8 +78,25 @@ FONTES_LOGO: dict[str, str] = {
 }
 
 # Agentes cuja logomarca é branca (ou muito clara) e some sobre fundo claro —
-# o arquivo é gravado sobre um fundo escuro no script de download.
-LOGOS_FUNDO_ESCURO = {"SERVENG"}
+# o arquivo é gravado sobre um fundo escuro (no caso da Axia, o azul da própria
+# marca) em vez de fundo branco.
+LOGOS_FUNDO_ESCURO = {"SERVENG", "AXIA NORDESTE"}
+
+# Agentes das subestações de transmissão. Diferem dos agentes de conjunto em
+# dois pontos: não estão na planilha de conjuntos (vêm do cadastro de
+# subestações do ONS, ``data/rede/subestacoes_rn.csv``) e suas logomarcas
+# foram **enviadas pelo usuário**, não baixadas — por isso ficam fora de
+# ``FONTES_LOGO``, que alimenta ``scripts/baixar_logos_agentes.py``.
+#
+# A resolução da logomarca (``logo_agente``/``classe_logo``) é a mesma dos
+# demais agentes: casa pelo nome normalizado com o arquivo em
+# ``data/icons/agentes/``.
+AGENTES_TRANSMISSAO = {
+    "ARGO ENERGIA",
+    "AXIA NORDESTE",
+    "CYMI",
+    "TAESA",
+}
 
 
 def _sem_acento(texto: str) -> str:
