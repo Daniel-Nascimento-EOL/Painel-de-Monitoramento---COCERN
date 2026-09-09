@@ -59,7 +59,7 @@ core/
 scripts/
   ├── baixar_logos_agentes.py   ── baixa as logomarcas para data/icons/agentes/
   ├── atualizar_cache_coff.py   ── pré-aquece data/cache_coff/
-  ├── atualizar_dados_mapa.py   ── consulta ONS/ANEEL e regrava data/rede/*.csv (--ses --linhas --siga)
+  ├── atualizar_dados_mapa.py   ── consulta ONS/ANEEL e gera data/rede/*.novo.csv p/ conferência (não toca os vigentes)
   └── gerar_geojson_auditoria.py ── regenera docs/pontos_mapa.geojson
 
 data/
@@ -231,12 +231,16 @@ a ser **arquivos versionados**, lidos direto do disco:
   esses dados. **Não é importado pelo aplicativo** — só por
   `scripts/atualizar_dados_mapa.py`. Mantém `requests`, sem `streamlit`.
 - **`scripts/atualizar_dados_mapa.py`** baixa, **valida** (contagem mínima,
-  coordenada dentro do bounding box do RN, colunas-chave presentes) e
-  regrava os três CSV. Seções independentes: `--ses --linhas --siga`
-  (default: as três). Uma fonte fora do ar não impede as demais; o arquivo
-  da que falhou fica intacto e o script sai com código != 0.
-- **Fluxo:** rodar o script → conferir `git diff data/rede/` → commit →
-  push (o site é o do GitHub — ver §6).
+  coordenada dentro do bounding box do RN, colunas-chave presentes) e grava
+  o resultado num **`<nome>.novo.csv` ao lado do vigente — nunca sobrescreve
+  o arquivo em uso**. Seções independentes: `--ses --linhas --siga` (default:
+  as três); uma fonte fora do ar não impede as demais; sai com código != 0
+  se alguma falhar. Os `.novo.csv` estão no `.gitignore`.
+- **Fluxo de aprovação (manual):** rodar o script → comparar cada par com
+  `git diff --no-index data/rede/X.csv data/rede/X.novo.csv` → se aprovar,
+  `mv data/rede/X.novo.csv data/rede/X.csv` → `git add` + commit → push (o
+  site é o do GitHub — ver §6). Se rejeitar, apagar o `.novo.csv`.
+  Correções feitas à mão no `.csv` em uso permanecem — o script não as toca.
 - **Gotcha da coluna `tensoes_kv`**: era lista Python (`[138, 230]`); no CSV
   vira string `"138;230"` e é reconstruída como lista na leitura. Os
   consumidores (`viz/map_charts.py`, `viz/mapa_estatico.py`,
@@ -586,8 +590,9 @@ Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
   urgente com dados recém-publicados.
 - **Dados de rede** (`data/rede/*.csv`, §2.6): não há workflow. Rodar
   `python scripts/atualizar_dados_mapa.py` à mão quando o cadastro do ONS ou
-  o SIGA mudarem (SE nova, linha nova, correção de coordenada), conferir
-  `git diff data/rede/` e commitar. O painel só reflete depois do push.
+  o SIGA mudarem — ele gera `.novo.csv` ao lado; comparar, promover com `mv`
+  se aprovar, commitar. `scripts/atualizar_tudo.py` encadeia essa e as
+  demais atualizações de `data/` (rede, COFF, PLD, logos, geojson).
 - **`gh` CLI**: instalado via `winget install GitHub.cli`, em
   `C:\Program Files\GitHub CLI\gh.exe`. Autenticado como
   **Daniel-Nascimento-EOL**. Terminal aberto antes da instalação não vê o

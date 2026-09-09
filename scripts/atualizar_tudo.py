@@ -1,8 +1,8 @@
 """Roda, em sequência, todos os scripts que atualizam os arquivos de ``data/``.
 
-É um atalho para preparar um deploy: encadeia as quatro atualizações
-automáticas, cada uma no seu script dedicado, e ao final imprime um resumo
-do que mudou (``git status`` da pasta ``data/``).
+É um atalho para preparar um deploy: encadeia as atualizações automáticas,
+cada uma no seu script dedicado, e ao final imprime um resumo do que mudou
+(``git status`` de ``data/`` e ``docs/``).
 
 Uso::
 
@@ -12,15 +12,19 @@ Uso::
 
 Etapas (nesta ordem):
 
-    rede   scripts/atualizar_dados_mapa.py   -> data/rede/*.csv
-    coff   scripts/atualizar_cache_coff.py   -> data/cache_coff/*.parquet
-    pld    scripts/atualizar_pld_local.py    -> data/historico_pld_ne.csv
+    rede   scripts/atualizar_dados_mapa.py   -> data/rede/*.novo.csv (não toca os vigentes)
+    coff   scripts/atualizar_cache_coff.py   -> data/cache_coff/*.parquet (só meses novos)
+    pld    scripts/atualizar_pld_local.py    -> data/historico_pld_ne.csv (aborta se divergir)
     logos  scripts/baixar_logos_agentes.py   -> data/icons/agentes/
     geojson scripts/gerar_geojson_auditoria.py -> docs/pontos_mapa.geojson
 
 Cada etapa é isolada: se uma falhar, as demais ainda rodam e o script
 encerra com código de saída != 0, listando o que falhou. Nada é
 commitado — confira ``git diff`` e faça os commits (um por tipo de dado).
+
+A etapa ``rede`` **não substitui** os CSV em uso: gera ``.novo.csv`` ao lado
+para conferência e promoção manual (ver o cabeçalho de
+``scripts/atualizar_dados_mapa.py``).
 
 O que este script **não** toca: as planilhas curadas à mão
 (``localizacao_conjuntos_ons_aneel.xlsx``, ``bays.xlsx``) e o contorno do
@@ -38,7 +42,7 @@ PYTHON = sys.executable
 
 # nome -> (script, argumentos fixos, descrição do alvo)
 _ETAPAS: dict[str, tuple[str, list[str], str]] = {
-    "rede": ("scripts/atualizar_dados_mapa.py", [], "data/rede/*.csv"),
+    "rede": ("scripts/atualizar_dados_mapa.py", [], "data/rede/*.novo.csv"),
     "coff": ("scripts/atualizar_cache_coff.py", [], "data/cache_coff/*.parquet"),
     "pld": ("scripts/atualizar_pld_local.py", [], "data/historico_pld_ne.csv"),
     "logos": ("scripts/baixar_logos_agentes.py", [], "data/icons/agentes/"),
@@ -63,7 +67,23 @@ def _rodar_etapa(nome: str) -> bool:
 
 
 def _resumo_git() -> None:
-    print(f"\n{'=' * 70}\nAlteracoes em data/ e docs/ (git status)\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nResultado\n{'=' * 70}")
+
+    # 1) Candidatas geradas pela etapa 'rede' — ficam fora do git (.novo.csv).
+    novos = sorted((RAIZ / "data" / "rede").glob("*.novo.csv"))
+    if novos:
+        print("Versoes candidatas geradas (NAO substituem os arquivos em uso):")
+        for n in novos:
+            vig = n.with_suffix("").with_suffix(".csv")
+            print(f"  {n.relative_to(RAIZ)}")
+            print(
+                f"    comparar:  git diff --no-index {vig.relative_to(RAIZ)} "
+                f"{n.relative_to(RAIZ)}"
+            )
+            print(f"    promover:  mv {n.relative_to(RAIZ)} {vig.relative_to(RAIZ)}")
+        print()
+
+    # 2) Arquivos versionados que mudaram de fato (COFF, PLD, logos, geojson).
     resultado = subprocess.run(
         ["git", "status", "--porcelain", "data", "docs"],
         cwd=RAIZ,
@@ -73,12 +93,13 @@ def _resumo_git() -> None:
     )
     saida = resultado.stdout.strip()
     if saida:
+        print("Arquivos versionados alterados:")
         print(saida)
         print(
             "\nConfira com 'git diff' e faca os commits (um por tipo de dado). "
             "O painel publico so muda apos o push."
         )
-    else:
+    elif not novos:
         print("Nada mudou — os arquivos ja estavam atualizados.")
 
 

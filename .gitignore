@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
+
+# Versões candidatas geradas por scripts/atualizar_dados_mapa.py — são para
+# conferência manual e promoção (mv para o nome vigente), não para versionar.
+data/rede/*.novo.csv

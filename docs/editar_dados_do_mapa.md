@@ -170,7 +170,7 @@ Potência por CEG das eólicas do RN (375 linhas hoje).
 | `fase_usina` | ex.: `Operação`. |
 | `proprietario` | |
 
-### Regenerar
+### Gerar uma versão atualizada
 
 ```
 python scripts/atualizar_dados_mapa.py            # as três
@@ -179,18 +179,42 @@ python scripts/atualizar_dados_mapa.py --linhas
 python scripts/atualizar_dados_mapa.py --siga
 ```
 
-O script valida cada tabela (contagem mínima, coordenada dentro do RN,
-colunas-chave presentes) e **só grava se passar**. Se uma fonte estiver
-fora do ar, as outras ainda são atualizadas e o arquivo da que falhou fica
-intacto. Ao final, confira `git diff data/rede/` e faça o commit.
+**O script nunca toca no arquivo em uso.** Para cada tabela ele baixa da
+fonte, valida (contagem mínima, coordenada dentro do RN, colunas-chave
+presentes) e grava o resultado num arquivo **`.novo.csv`** ao lado:
+
+| Em uso (versionado) | Gerado para conferência (fora do git) |
+|---|---|
+| `data/rede/subestacoes_rn.csv` | `data/rede/subestacoes_rn.novo.csv` |
+| `data/rede/linhas_transmissao_rn.csv` | `data/rede/linhas_transmissao_rn.novo.csv` |
+| `data/rede/siga_potencias_eol_rn.csv` | `data/rede/siga_potencias_eol_rn.novo.csv` |
+
+Os `.novo.csv` estão no `.gitignore` — não entram em commit por acidente.
+Se uma fonte estiver fora do ar, as outras ainda geram o seu `.novo.csv`.
+
+### Aprovar (promover a versão nova)
+
+1. Compare a candidata com o arquivo em uso:
+   ```
+   git diff --no-index data/rede/subestacoes_rn.csv data/rede/subestacoes_rn.novo.csv
+   ```
+2. **Se aprovar**, substitua o arquivo em uso pela candidata:
+   ```
+   mv data/rede/subestacoes_rn.novo.csv data/rede/subestacoes_rn.csv
+   git add data/rede/subestacoes_rn.csv && git commit -m "chore: atualiza cadastro de subestações do RN (ONS)"
+   ```
+3. **Se rejeitar**, apague a candidata: `rm data/rede/subestacoes_rn.novo.csv`.
+
+O painel só reflete a mudança depois do `push` (o site é o do GitHub).
 
 ### Correção pontual
 
 Para corrigir uma linha específica (uma coordenada errada, um nome), edite
-o CSV direto num editor de texto ou no Excel e commite. **Atenção:** a
-próxima execução do script sobrescreve o arquivo inteiro. Correções que
-precisam sobreviver a isso têm de ser levadas à fonte (ONS/ANEEL) ou
-tratadas no código de `core/fontes_online.py`.
+o `.csv` **em uso** direto num editor de texto ou no Excel e commite. Como o
+script não sobrescreve esse arquivo, a correção permanece até você promover
+uma versão nova por cima dela — aí compare com cuidado no `git diff` antes
+de aceitar. Correções recorrentes convém levar à fonte (ONS/ANEEL) ou
+tratar no código de `core/fontes_online.py`.
 
 ---
 
