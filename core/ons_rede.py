@@ -194,10 +194,12 @@ _NOME_EXIBICAO_SE = {
 #
 # Gotcha da Axia: na maioria das subestações do RN a Axia Nordeste é ao mesmo
 # tempo proprietária e operadora — ela não opera ativos de terceiros nem tem os
-# seus operados por outrem (informação do usuário, áudio 2026-09-09). A planilha
-# marcava 'Argo/Cymi' também em João Câmara II e Mossoró II, cujo agente
-# principal do ONS é AXIA NORDESTE; tratado como preenchimento arrastado por
-# engano na planilha e mantido Axia nas duas.
+# seus operados por outrem (informação do usuário, áudio 2026-09-09).
+#
+# A planilha marcava 'Proprietário: Argo Energia e Agente Operador: Cymi'
+# também em João Câmara II e Mossoró II. O usuário confirmou que era
+# preenchimento arrastado por engano: o par Argo/Cymi pertencia à Caraúbas II.
+# As duas são Axia/Axia — não reintroduzir a Cymi nelas.
 _AGENTES_SE = {
     "ACU 2": ("Axia Nordeste", "Axia Nordeste"),
     "ACU 3": ("Argo Energia", "Cymi"),
