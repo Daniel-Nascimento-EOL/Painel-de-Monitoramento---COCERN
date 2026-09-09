@@ -93,10 +93,6 @@ def render() -> None:
         df_acumulado, meses_acumulados = None, []
 
     st.markdown("## Mapa de Conjuntos Eólicos — Rio Grande do Norte")
-    st.caption(
-        "Conjuntos eólicos Tipo II-C localizados no RN · "
-        "Fontes: ONS SINMAPS, ONS (relação conjunto–usina), ANEEL SIGA"
-    )
     st.divider()
 
     st.sidebar.markdown("#### Filtros")

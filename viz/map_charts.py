@@ -15,7 +15,7 @@ from shapely.geometry import shape
 from core.agentes import classe_css_logos, classe_logo, separar_agentes
 from core.documentos_ons import documentos_do_conjunto
 from core.ons_coff import METODOLOGIA_PADRAO, METODOLOGIAS
-from core.ons_rede import cor_tensao, nome_exibicao_subestacao
+from core.ons_rede import agentes_subestacao, cor_tensao, nome_exibicao_subestacao
 
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 ICONS_DIR = Path(__file__).resolve().parent.parent / "data" / "icons"
@@ -51,8 +51,11 @@ _COR_CONTORNO = "#9aa5b1"
 _COR_CIDADE = "#8a8f98"
 _COR_LINHA_CONEXAO = "#9aa5b1"
 
-# Ícone do marcador de conjunto — tamanho fixo (sem proporcionalidade à qtd. de usinas).
-_TAMANHO_ICONE_CONJUNTO = 24
+# Ícone do marcador de conjunto — tamanho fixo (sem proporcionalidade à qtd. de
+# usinas). Reduzido 40% (24 -> 14 px) a pedido do usuário: no tamanho anterior os
+# marcadores de conjunto poluíam visualmente os de subestação e dificultavam
+# localizar cada conjunto.
+_TAMANHO_ICONE_CONJUNTO = 14
 
 # Altura máxima do conteúdo da ficha do conjunto. Com as metodologias
 # secundárias recolhidas a ficha cabe inteira nesta altura; ao expandi-las, o
@@ -343,6 +346,38 @@ def _bloco_agentes(rotulo: str, valor, cor_avatar: str) -> str:
     )
 
 
+def _texto_tensoes(tensoes) -> str:
+    """Níveis de tensão da subestação, do maior para o menor (pedido do
+    usuário). Ex.: ``[69, 138, 230]`` -> ``'230 / 138 / 69 kV'``."""
+    if isinstance(tensoes, (list, tuple)) and len(tensoes):
+        return " / ".join(f"{int(t)}" for t in sorted(tensoes, reverse=True)) + " kV"
+    return ""
+
+
+def _ficha_subestacao_html(nome_se: str, tensao_txt: str, agente_operador) -> str:
+    """Ficha da subestação, nos mesmos moldes da ficha do conjunto: nome,
+    níveis de tensão e os agentes proprietário/operador com logomarca.
+
+    O proprietário e o operador vêm do cadastro curado em
+    ``core/ons_rede.py::agentes_subestacao`` — o cadastro do ONS traz apenas o
+    agente principal, quase sempre o nome da SPE. Quando a subestação não está
+    nesse cadastro, cai no agente operador da planilha ``bays.xlsx``.
+    """
+    proprietario, operador = agentes_subestacao(nome_se)
+    if proprietario is None and operador is None:
+        operador = agente_operador
+    blocos = _bloco_agentes("Agente Proprietário", proprietario, _COR_SUBESTACAO)
+    blocos += _bloco_agentes("Agente Operador", operador, _COR_SUBESTACAO)
+    return (
+        f'<div style="font-family:{_FONTE_TEXTO}; color:#3a444e; min-width:210px;">'
+        f'<div style="font-size:14px; font-weight:600; color:#2a3542; '
+        f'margin-bottom:2px;">{nome_se}</div>'
+        f'<div style="font-size:11.5px; color:#6b7580; margin-bottom:9px;">'
+        f'{tensao_txt or "tensão não cadastrada (ONS)"}</div>'
+        f"{blocos}</div>"
+    )
+
+
 def _numero_br(valor: float, casas: int = 2) -> str:
     """Formata no padrão brasileiro: milhar com ponto, decimal com vírgula."""
     inteiro, _, decimal = f"{valor:,.{casas}f}".partition(".")
@@ -426,16 +461,28 @@ CAMADAS_PADRAO = {
 
 
 def _legenda_tensao_html() -> str:
-    """Legenda flutuante das cores de tensão (canto inferior esquerdo)."""
+    """Legenda flutuante das cores de tensão e dos dois traçados de linha
+    (canto inferior esquerdo)."""
     itens = "".join(
         f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
         f'<span style="width:16px;height:3px;background:{cor};display:inline-block;"></span>'
         f'<span>{rotulo}</span></div>'
         for rotulo, cor in [
+            ("69 kV", cor_tensao(69)),
             ("138 kV", cor_tensao(138)),
             ("230 kV", cor_tensao(230)),
             ("500 kV", cor_tensao(500)),
-            ("69 kV / outra", cor_tensao(69)),
+        ]
+    )
+    # Traçado: contínuo para linha de transmissão entre subestações, tracejado
+    # para a conexão conjunto -> subestação (pedido do usuário, áudio 2026-09-09).
+    tracados = "".join(
+        f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
+        f'<span style="width:16px;height:0;border-top:2px {estilo} #6b7580;'
+        f'display:inline-block;"></span><span>{rotulo}</span></div>'
+        for rotulo, estilo in [
+            ("Linha de transmissão", "solid"),
+            ("Conexão do conjunto", "dashed"),
         ]
     )
     return (
@@ -444,7 +491,9 @@ def _legenda_tensao_html() -> str:
         f'padding:8px 10px;font-family:{_FONTE_TEXTO};font-size:11px;color:#4a545e;'
         'box-shadow:0 1px 4px rgba(0,0,0,0.12);">'
         '<div style="font-weight:600;margin-bottom:4px;">Nível de tensão</div>'
-        f"{itens}</div>"
+        f"{itens}"
+        '<div style="font-weight:600;margin:6px 0 4px;">Traçado</div>'
+        f"{tracados}</div>"
     )
 
 
@@ -633,22 +682,15 @@ def build_map(
     if camadas["subestacoes"] and df_bays is not None and not df_bays.empty:
         for _, row in df_bays.iterrows():
             nome_se = _nome_subestacao(row["subestacao"])
-            tensoes = row.get("tensoes_kv")
-            if isinstance(tensoes, (list, tuple)) and len(tensoes):
-                tensao_txt = " / ".join(f"{int(t)}" for t in tensoes) + " kV"
-            else:
-                tensao_txt = "tensão não cadastrada (ONS)"
-            popup_html = (
-                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
-                f"<b>{nome_se}</b><br>"
-                f"Níveis de tensão: {tensao_txt}<br>"
-                f'Agente Operador: {row["agente_operador"]}</div>'
+            tensao_txt = _texto_tensoes(row.get("tensoes_kv"))
+            popup_html = _ficha_subestacao_html(
+                nome_se, tensao_txt, row["agente_operador"]
             )
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
                 icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
-                tooltip=f"{nome_se} · {tensao_txt}",
-                popup=folium.Popup(popup_html, max_width=260),
+                tooltip=f'{nome_se} · {tensao_txt or "—"}',
+                popup=folium.Popup(popup_html, max_width=280),
                 z_index_offset=1000,
             ).add_to(m)
 
@@ -660,23 +702,16 @@ def build_map(
         for chave, se in ses_ons_por_chave.items():
             if chave not in ses_com_linha:
                 continue
-            tensoes = se.get("tensoes_kv")
-            if isinstance(tensoes, (list, tuple)) and len(tensoes):
-                tensao_txt = " / ".join(f"{int(t)}" for t in tensoes) + " kV"
-            else:
-                tensao_txt = "—"
+            tensao_txt = _texto_tensoes(se.get("tensoes_kv"))
             nome_se = _nome_subestacao(se["nom_subestacao"])
-            popup_html = (
-                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
-                f"<b>{nome_se}</b><br>"
-                f"Níveis de tensão: {tensao_txt}<br>"
-                f'Agente: {se.get("agente_principal", "—")}</div>'
+            popup_html = _ficha_subestacao_html(
+                nome_se, tensao_txt, se.get("agente_principal")
             )
             folium.Marker(
                 location=[se["latitude"], se["longitude"]],
                 icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
-                tooltip=f"{nome_se} · {tensao_txt}",
-                popup=folium.Popup(popup_html, max_width=260),
+                tooltip=f'{nome_se} · {tensao_txt or "—"}',
+                popup=folium.Popup(popup_html, max_width=280),
                 z_index_offset=1000,
             ).add_to(m)
 

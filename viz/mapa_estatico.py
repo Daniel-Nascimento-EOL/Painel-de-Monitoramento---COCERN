@@ -44,7 +44,9 @@ _CAMADAS_SUPORTADAS = {
 }
 
 _ICONE_SE_PX = 34
-_ICONE_CONJUNTO_PX = 30
+# Reduzido 40% (30 -> 18 px) junto com o marcador do mapa interativo
+# (viz/map_charts.py::_TAMANHO_ICONE_CONJUNTO), para os dois mapas coincidirem.
+_ICONE_CONJUNTO_PX = 18
 _DIR_ICONES_TMP = Path(tempfile.gettempdir()) / "painel_coff_icones_estaticos"
 
 
