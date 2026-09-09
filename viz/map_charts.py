@@ -15,7 +15,12 @@ from shapely.geometry import shape
 from core.agentes import classe_css_logos, classe_logo, separar_agentes
 from core.documentos_ons import documentos_do_conjunto
 from core.ons_coff import METODOLOGIA_PADRAO, METODOLOGIAS
-from core.ons_rede import agentes_subestacao, cor_tensao, nome_exibicao_subestacao
+from core.ons_rede import (
+    agentes_subestacao,
+    cor_tensao,
+    marca_agente_linha,
+    nome_exibicao_subestacao,
+)
 
 RN_GEOJSON_PATH = Path(__file__).resolve().parent.parent / "data" / "rn_estado.geojson"
 ICONS_DIR = Path(__file__).resolve().parent.parent / "data" / "icons"
@@ -378,6 +383,74 @@ def _ficha_subestacao_html(nome_se: str, tensao_txt: str, agente_operador) -> st
     )
 
 
+def _linha_ficha(rotulo: str, valor: str) -> str:
+    """Par rótulo/valor das fichas de linha, no mesmo estilo dos blocos de
+    agente (rótulo miúdo em caixa alta sobre o valor)."""
+    return (
+        '<div style="margin-bottom:7px;">'
+        f'<div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; '
+        f'color:#9aa5b1; margin-bottom:2px;">{rotulo}</div>'
+        f'<div style="font-size:12.5px; color:#2a3542; font-weight:500; '
+        f'line-height:1.3;">{valor}</div></div>'
+    )
+
+
+def _ficha_linha_transmissao_html(ln) -> str:
+    """Ficha da linha de transmissão entre duas subestações, nos mesmos moldes
+    das fichas de conjunto e de subestação.
+
+    O nome segue a nomenclatura das subestações que a linha liga (pedido do
+    usuário), com a grafia de exibição em vez da grafia crua do ONS. A tensão
+    não entra no nome: a cor da linha já a informa, pela legenda.
+    """
+    de = nome_exibicao_subestacao(ln["subestacao_de"])
+    para = nome_exibicao_subestacao(ln["subestacao_para"])
+    tensao = ln["tensao_kv"]
+    cor = cor_tensao(tensao)
+    comprimento = ln.get("comprimento_km")
+    comp_txt = f"{_numero_br(comprimento, 1)} km" if pd.notna(comprimento) else "—"
+    corpo = _linha_ficha("Nível de tensão", f"{tensao:.0f} kV")
+    corpo += _linha_ficha("Extensão", comp_txt)
+    # O ONS grafa o tipo de rede sem acento ('Basica').
+    tipo_rede = {"Basica": "Básica"}.get(
+        str(ln.get("tipo_rede") or ""), str(ln.get("tipo_rede") or "—")
+    )
+    corpo += _linha_ficha("Rede", tipo_rede)
+    corpo += _bloco_agentes(
+        "Agente", marca_agente_linha(ln.get("agente")), _COR_SUBESTACAO
+    )
+    return (
+        f'<div style="font-family:{_FONTE_TEXTO}; color:#3a444e; min-width:210px;">'
+        f'<div style="font-size:14px; font-weight:600; color:#2a3542; '
+        f'margin-bottom:3px;">{de} — {para}</div>'
+        f'<div style="height:3px; width:38px; background:{cor}; '
+        f'margin-bottom:9px;"></div>'
+        f"{corpo}</div>"
+    )
+
+
+def _ficha_linha_conexao_html(conjunto: str, nome_se: str, tensao) -> str:
+    """Ficha da linha de conexão conjunto -> subestação.
+
+    Distinta da linha de transmissão: é a ligação do conjunto ao seu ponto de
+    conexão, desenhada tracejada. O cadastro do ONS não traz extensão nem
+    agente para ela, então a ficha fica no essencial.
+    """
+    cor = cor_tensao(tensao)
+    corpo = _linha_ficha("Conjunto", conjunto)
+    corpo += _linha_ficha("Ponto de conexão", nome_se)
+    if tensao is not None and pd.notna(tensao):
+        corpo += _linha_ficha("Nível de tensão", f"{int(tensao)} kV")
+    return (
+        f'<div style="font-family:{_FONTE_TEXTO}; color:#3a444e; min-width:200px;">'
+        f'<div style="font-size:14px; font-weight:600; color:#2a3542; '
+        f'margin-bottom:3px;">Conexão do conjunto</div>'
+        f'<div style="height:0; width:38px; border-top:3px dashed {cor}; '
+        f'margin-bottom:9px;"></div>'
+        f"{corpo}</div>"
+    )
+
+
 def _numero_br(valor: float, casas: int = 2) -> str:
     """Formata no padrão brasileiro: milhar com ponto, decimal com vírgula."""
     inteiro, _, decimal = f"{valor:,.{casas}f}".partition(".")
@@ -604,6 +677,7 @@ def build_map(
             bays_por_chave[row["chave"]] = {
                 "pos": (row["latitude"], row["longitude"]),
                 "tensao_max_kv": tensao_max,
+                "nome": _nome_subestacao(row["subestacao"]),
             }
 
     # Índice de coordenadas de TODAS as subestações do RN no cadastro do ONS —
@@ -645,22 +719,17 @@ def build_map(
             b = ses_por_chave.get(ln["chave_para"])
             if a is None or b is None:
                 continue  # alguma ponta sem coordenada no cadastro do ONS
-            comprimento = ln.get("comprimento_km")
-            comp_txt = f"{comprimento:.0f} km" if pd.notna(comprimento) else "—"
-            popup_html = (
-                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
-                f'<b>{ln["subestacao_de"]} — {ln["subestacao_para"]}</b><br>'
-                f'{ln["tensao_kv"]:.0f} kV · {ln["tipo_rede"]}<br>'
-                f'Extensão: {comp_txt}<br>'
-                f'Agente: {ln["agente"]}</div>'
+            nome_linha = (
+                f'{nome_exibicao_subestacao(ln["subestacao_de"])} — '
+                f'{nome_exibicao_subestacao(ln["subestacao_para"])}'
             )
             folium.PolyLine(
                 locations=[a, b],
                 color=cor_tensao(ln["tensao_kv"]),
                 weight=2.2,
                 opacity=0.75,
-                tooltip=f'{ln["subestacao_de"]} — {ln["subestacao_para"]} ({ln["tensao_kv"]:.0f} kV)',
-                popup=folium.Popup(popup_html, max_width=280),
+                tooltip=nome_linha,
+                popup=folium.Popup(_ficha_linha_transmissao_html(ln), max_width=280),
             ).add_to(m)
 
     # Linhas de conexão conjunto -> subestação — coloridas pela tensão máxima
@@ -670,12 +739,20 @@ def build_map(
             destino = bays_por_chave.get(row["chave_subestacao"])
             if destino is None:
                 continue
+            nome_destino = destino.get("nome", "—")
             folium.PolyLine(
                 locations=[[row["latitude"], row["longitude"]], destino["pos"]],
                 color=cor_tensao(destino["tensao_max_kv"]),
                 weight=1.6,
                 opacity=0.55,
                 dash_array="4,5",
+                tooltip=f'{row["conjunto"]} — {nome_destino}',
+                popup=folium.Popup(
+                    _ficha_linha_conexao_html(
+                        row["conjunto"], nome_destino, destino["tensao_max_kv"]
+                    ),
+                    max_width=260,
+                ),
             ).add_to(m)
 
     # Marcadores das subestações.
