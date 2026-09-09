@@ -1,9 +1,9 @@
 import streamlit as st
 
-from ui import dados, energia_frustrada, mapa, painel_pld
+from ui import apresentacao, dados, energia_frustrada, mapa, painel_pld
 
 st.set_page_config(
-    page_title="Constrained-off — Conjuntos Eólicos RN",
+    page_title="COCERN — Constrained-off dos Conjuntos Eólicos do RN",
     page_icon="🌬️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -55,6 +55,12 @@ hr {
 """
 st.markdown(_CSS, unsafe_allow_html=True)
 
+# Tela de apresentação: só na entrada da sessão, antes das páginas de
+# trabalho. É a única parte do painel em modo escuro (ver ui/apresentacao.py).
+if not apresentacao.ja_vista():
+    apresentacao.render()
+    st.stop()
+
 st.sidebar.title("Painel COCERN")
 st.sidebar.caption("Monitoramento de constrained-off — Conjuntos Eólicos do RN")
 
@@ -62,6 +68,9 @@ pagina = st.sidebar.radio(
     "Navegação", ["Mapa", "Energia Frustrada", "Preço Horário (PLD)", "Dados do mapa"],
     label_visibility="collapsed",
 )
+if st.sidebar.button("Tela inicial", use_container_width=True):
+    apresentacao.voltar()
+    st.rerun()
 st.sidebar.divider()
 
 if pagina == "Mapa":
