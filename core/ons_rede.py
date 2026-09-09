@@ -25,13 +25,15 @@ _REDE_DIR = Path(__file__).resolve().parent.parent / "data" / "rede"
 _ARQ_SUBESTACOES = _REDE_DIR / "subestacoes_rn.csv"
 _ARQ_LINHAS = _REDE_DIR / "linhas_transmissao_rn.csv"
 
-# Paleta de tensão — pedido do usuário (áudio 2026-08-22).
+# Paleta de tensão — pedido do usuário (áudio 2026-09-09, que corrige a
+# atribuição anterior: o 230 kV era verde e o 69 kV não tinha faixa própria).
 _COR_POR_TENSAO = {
+    69: "#8bc34a",    # 69 kV — verde-limão
     138: "#2a2a2a",   # 138 kV — preto
-    230: "#3f8a4f",   # 230 kV — verde
+    230: "#2b62b5",   # 230 kV — azul
     500: "#b5433a",   # 500 kV — vermelho
 }
-_COR_TENSAO_OUTRA = "#9aa5b1"  # 69 kV e demais — cinza neutro
+_COR_TENSAO_OUTRA = "#9aa5b1"  # tensão desconhecida ou fora das quatro faixas
 
 
 def cor_tensao(kv: float | int | None) -> str:
@@ -141,6 +143,7 @@ _TRANSMISSORAS = (
     "CTEEP",
     "ALUPAR",
     "LAGOA NOVA",  # SE Currais Novos II — transmissora, apesar do nome de SPE
+    "DUNAMIS",  # SE Simplice — idem (operada pela Taesa)
 )
 
 # Subestações que estão em bays.xlsx (curadoria do cliente) e devem ser
@@ -179,8 +182,50 @@ _NOME_EXIBICAO_SE = {
     "PARAISO": "Paraíso",
     "RIACHAO 2": "Riachão II",
     "SANTA LUZIA 2": "Santa Luzia II",
+    "SIMPLICE": "Simplice",
     "TOUROS": "Touros",
 }
+
+
+# Agente proprietário e agente operador de cada subestação de transmissão.
+#
+# O cadastro do ONS traz apenas o ``agente principal``, quase sempre o nome da
+# SPE ('ARGO VI', 'DUNAS', 'LAGOA NOVA', 'DUNAMIS'), que não identifica a marca
+# a exibir na ficha. Estes pares vêm da planilha curada pelo usuário
+# (``SUBESTACAO.xlsx``, set/2026) e são o que alimenta as logomarcas.
+#
+# Gotcha da Axia: na maioria das subestações do RN a Axia Nordeste é ao mesmo
+# tempo proprietária e operadora — ela não opera ativos de terceiros nem tem os
+# seus operados por outrem (informação do usuário, áudio 2026-09-09). A planilha
+# marcava 'Argo/Cymi' também em João Câmara II e Mossoró II, cujo agente
+# principal do ONS é AXIA NORDESTE; tratado como preenchimento arrastado por
+# engano na planilha e mantido Axia nas duas.
+_AGENTES_SE = {
+    "ACU 2": ("Axia Nordeste", "Axia Nordeste"),
+    "ACU 3": ("Argo Energia", "Cymi"),
+    "CARAUBAS 2": ("Argo Energia", "Cymi"),
+    "CEARA MIRIM 2": ("Axia Nordeste", "Axia Nordeste"),
+    "CURRAIS NOVOS 2": ("Taesa", "Taesa"),
+    "EXTREMOZ 2": ("Axia Nordeste", "Axia Nordeste"),
+    "JANDAIRA 2": ("Argo Energia", "Cymi"),
+    "JOAO CAMARA 2": ("Axia Nordeste", "Axia Nordeste"),
+    "JOAO CAMARA 3": ("Axia Nordeste", "Axia Nordeste"),
+    "LAGOA NOVA 2": ("Axia Nordeste", "Axia Nordeste"),
+    "MONTE VERDE": ("Argo Energia", "Cymi"),
+    "MOSSORO 2": ("Axia Nordeste", "Axia Nordeste"),
+    "MOSSORO 4": ("Axia Nordeste", "Axia Nordeste"),
+    "NATAL 2": ("Axia Nordeste", "Axia Nordeste"),
+    "NATAL 3": ("Axia Nordeste", "Axia Nordeste"),
+    "PARAISO": ("Axia Nordeste", "Axia Nordeste"),
+    "SIMPLICE": ("Taesa", "Taesa"),
+    "TOUROS": ("Axia Nordeste", "Axia Nordeste"),
+}
+
+
+def agentes_subestacao(nome: str) -> tuple[str | None, str | None]:
+    """Par ``(proprietário, operador)`` da subestação, ou ``(None, None)`` se
+    ela não constar do cadastro curado."""
+    return _AGENTES_SE.get(_chave_subestacao_ons(nome), (None, None))
 
 
 def nome_exibicao_subestacao(nome: str) -> str:
