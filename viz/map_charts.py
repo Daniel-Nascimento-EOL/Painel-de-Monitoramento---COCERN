@@ -166,6 +166,26 @@ def _script_escala_icones() -> folium.Element:
     <style>
       .leaflet-marker-pane {{ z-index: 640; }}
       .marcador-escala {{ will-change: transform; }}
+      /* Com a camada de satélite ligada (classe .satelite-ativo no container
+         do mapa), os ícones tingidos e os rótulos ficam quase invisíveis
+         sobre a imagem escura. Um halo branco espesso — via drop-shadow em
+         quatro sentidos — recorta cada marcador do fundo. */
+      .satelite-ativo .marcador-escala {{
+        filter:
+          drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff)
+          drop-shadow(1px 1px 1px #fff) drop-shadow(-1px -1px 1px #fff);
+      }}
+      .satelite-ativo .marcador-escala-wrap svg,
+      .satelite-ativo .leaflet-marker-icon svg {{
+        filter:
+          drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff)
+          drop-shadow(1px 1px 1px #fff) drop-shadow(-1px -1px 1px #fff) !important;
+      }}
+      .satelite-ativo .rotulo-cidade {{
+        color: #12303a !important;
+        text-shadow:
+          0 0 3px #fff, 0 0 3px #fff, 1px 1px 2px #fff, -1px -1px 2px #fff !important;
+      }}
       /* A ficha do conjunto lista as 5 metodologias duas vezes (energia e
          impacto) e ficava mais alta que o mapa, saindo da tela — o Leaflet
          só reposiciona (autoPan) o popup que cabe. Limita a altura e deixa
@@ -203,6 +223,18 @@ def _script_escala_icones() -> folium.Element:
         mapa.on('zoomend', reescalar);
         mapa.whenReady(reescalar);
         reescalar();
+
+        // Halo branco nos ícones enquanto a camada de satélite estiver ligada.
+        var alvo = mapa.getContainer();
+        function ehSatelite(e) {{
+          return e && e.name && e.name.indexOf('Sat') === 0;
+        }}
+        mapa.on('overlayadd', function (e) {{
+          if (ehSatelite(e)) alvo.classList.add('satelite-ativo');
+        }});
+        mapa.on('overlayremove', function (e) {{
+          if (ehSatelite(e)) alvo.classList.remove('satelite-ativo');
+        }});
       }}
       iniciar();
     }})();
@@ -231,7 +263,7 @@ def _icone_turbina(cor: str, tamanho: int) -> folium.DivIcon:
 
 def _rotulo_cidade(nome: str) -> folium.DivIcon:
     html = (
-        f'<div style="font-size:11px; font-style:italic; color:{_COR_CIDADE}; '
+        f'<div class="rotulo-cidade" style="font-size:11px; font-style:italic; color:{_COR_CIDADE}; '
         f'white-space:nowrap; transform:translateX(-50%); '
         f'text-shadow:0 1px 2px rgba(255,255,255,0.9), 0 -1px 2px rgba(255,255,255,0.9);">'
         f"{nome}</div>"
