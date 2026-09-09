@@ -228,6 +228,38 @@ def agentes_subestacao(nome: str) -> tuple[str | None, str | None]:
     return _AGENTES_SE.get(_chave_subestacao_ons(nome), (None, None))
 
 
+# Marca comercial por trás do nome de SPE que o ONS registra em
+# ``nom_agente_principal`` nas linhas de transmissão. Mesma limitação do
+# cadastro de subestações: a coluna traz a razão social do veículo detentor
+# da concessão ('ARGO VI', 'DUNAS'), não a marca a exibir na ficha.
+#
+# Só entram aqui as SPEs de **transmissoras**, verificadas uma a uma. As SPEs
+# de conjunto eólico ('EOL SERIDÓ X', 'SPE2 MUNDO NOVO', 'POTIGUAR B31',
+# 'VDSF1'...) ficam de fora de propósito: são o agente da linha de conexão da
+# própria usina, cuja marca já aparece na ficha do conjunto, e boa parte nem
+# tem logomarca própria. Sem correspondência aqui, a ficha usa o avatar com a
+# inicial do nome — comportamento normal para agente sem logomarca.
+_MARCA_POR_SPE = {
+    "ARGO VI": "Argo Energia",
+    "ARGO VIII": "Argo Energia",
+    "DUNAS": "Argo Energia",
+    "DUNAMIS": "Taesa",
+    "LAGOA NOVA": "Taesa",
+}
+
+
+def marca_agente_linha(agente: str | None) -> str | None:
+    """Marca comercial do agente da linha, quando o ONS registra a SPE.
+
+    Devolve o próprio nome quando não há correspondência — o agente já é a
+    marca (caso de 'AXIA NORDESTE' e 'TAESA') ou é uma SPE de conjunto, que
+    a ficha exibe como veio do cadastro.
+    """
+    if agente is None or (isinstance(agente, float) and pd.isna(agente)):
+        return None
+    return _MARCA_POR_SPE.get(_sem_acento(str(agente).strip()).upper(), str(agente))
+
+
 def nome_exibicao_subestacao(nome: str) -> str:
     """Nome da subestação como o painel exibe: 'SE ' + grafia por extenso,
     sem o nível de tensão (que passa a constar apenas na ficha).
@@ -239,4 +271,11 @@ def nome_exibicao_subestacao(nome: str) -> str:
     chave = _chave_subestacao_ons(bruto)
     if chave in _NOME_EXIBICAO_SE:
         return f"SE {_NOME_EXIBICAO_SE[chave]}"
-    return f"SE {bruto.title()}" if bruto.isupper() else f"SE {bruto}"
+    if not bruto.isupper():
+        return f"SE {bruto}"
+    # ``str.title()`` estragaria o numeral romano ('II' -> 'Ii'); as SE fora do
+    # dicionário são as de outros estados, ponta de linha que entra no RN.
+    palavras = [
+        p if p in _ROMANO_PARA_ARABICO else p.title() for p in bruto.split(" ")
+    ]
+    return "SE " + " ".join(palavras)
