@@ -16,7 +16,7 @@ automático dos dados abertos do ONS (constrained-off) e da CCEE (PLD
 horário) e cálculo das 5 metodologias definidas pelo usuário; (3) **Painel
 de Preço Horário (PLD)** do submercado Nordeste, no estilo do painel da
 própria CCEE; (4) página **Dados do mapa** — todas as tabelas de origem num
-só lugar, com edição inline e exportação. Os dados de rede (subestações,
+só lugar, para conferência e exportação. Os dados de rede (subestações,
 linhas, potências do SIGA) são espelhados em `data/rede/` e o painel não
 baixa nada em tempo de execução para desenhar o mapa (ver §2.6).
 Próxima fase (ficha de detalhe de subestação com documentos vinculados)
@@ -47,7 +47,7 @@ app.py                        ── page_config, CSS global, roteador (radio na
   │     ├── core/relatorio_dados.py ── compila o "dossiê" por conjunto (cadastro + SE/linhas + COFF do mês)
   │     └── viz/pdf_relatorio.py    ── relatório PDF consolidado (ReportLab + matplotlib): capa, resumo RN, seção/conjunto
   ├── ui/painel_pld.py         ── painel de preço horário: PLD da hora, curva do dia (Ontem/Hoje/Amanhã), evolução recente
-  └── ui/dados.py              ── página "Dados do mapa": todas as tabelas de origem, edição inline, realce, export CSV/GeoJSON
+  └── ui/dados.py              ── página "Dados do mapa": todas as tabelas de origem (só leitura), realce de suspeitas, export CSV/GeoJSON
 
 core/
   ├── agentes.py                ── cadastro dos agentes + logomarcas locais
@@ -127,9 +127,9 @@ uppercase). Validado: 54/54 sem sobra.
 - **Cidades_RN** (21 linhas): cidades de referência pra ficarem fixas no
   mapa (sem interação, só rótulo).
 
-Ambas as planilhas são editáveis pela página **Dados do mapa** (§4.6) —
-`st.data_editor` grava de volta na aba certa via `ExcelWriter(mode="a",
-if_sheet_exists="replace")`, preservando as demais abas.
+Ambas as planilhas são editadas **à mão** (Excel) e versionadas por commit.
+A página **Dados do mapa** (§4.6) só exibe e sinaliza linhas suspeitas — não
+grava nada.
 
 ### 2.3 Dataset ONS de constrained-off (ao vivo)
 
@@ -537,28 +537,23 @@ para a sondagem seguir barata (~0,3 s).
 
 ### 4.6 Página "Dados do mapa" — `ui/dados.py`
 
-Reúne num só lugar todas as tabelas que alimentam o mapa: cadastrais
-(conjuntos, subestações `bays`, cidades), de rede (`data/rede/*.csv` — §2.6)
-e a derivada de linhas de conexão conjunto→SE. Três capacidades por tabela:
+Reúne num só lugar, **só para leitura**, todas as tabelas que alimentam o
+mapa: cadastrais (conjuntos, subestações `bays`, cidades), de rede
+(`data/rede/*.csv` — §2.6) e a derivada de linhas de conexão conjunto→SE.
+Duas funções:
 
-- **Conferir**: grade com realce de linhas suspeitas — coordenada fora do
-  bounding box do RN (`_LAT_RN`/`_LON_RN`), linha de conexão acima de
-  `_LIMITE_LINHA_KM` (60 km) ou sem SE correspondente.
-- **Editar**: `st.data_editor` (`num_rows="dynamic"`). O botão "Salvar"
-  regrava a origem — a aba certa do `.xlsx` via `ExcelWriter(mode="a",
-  if_sheet_exists="replace")` (preserva as outras abas), ou o CSV. Ao
-  salvar, `st.cache_data.clear()`. Coordenada dos conjuntos editada como
-  `latitude`/`longitude` e recomposta para a coluna combinada; capacidade
-  volta a `"109,20 MW"`.
+- **Conferir**: cada tabela mostra, antes da grade completa, um aviso com as
+  linhas suspeitas — coordenada fora do bounding box do RN
+  (`_LAT_RN`/`_LON_RN`), linha de conexão acima de `_LIMITE_LINHA_KM`
+  (60 km) ou sem SE correspondente.
 - **Exportar**: CSV (UTF-8 com BOM) por tabela + um GeoJSON com os 453
   pontos/linhas para conferência com satélite (mesmo conteúdo em
   `docs/pontos_mapa.geojson`, regenerável por
   `scripts/gerar_geojson_auditoria.py`).
 
-**Gotcha do deploy**: no Streamlit Community Cloud o disco é efêmero — a
-gravação inline vale só até o reinício. A UI avisa: lá o fluxo é baixar o
-CSV, editar e versionar. Localmente, salvar altera o repositório (lembrar de
-`git add`).
+**A página não edita nada.** A alteração dos dados é sempre manual, no
+arquivo de `data/` (planilha ou CSV), seguida de commit — decisão do
+usuário. Não reintroduzir `st.data_editor` nem gravação a partir da UI.
 
 ---
 
@@ -615,8 +610,8 @@ cadastro ONS de subestações/linhas), **download PNG do mapa**,
 **logomarcas oficiais dos agentes**, **filtro de subestações de transmissão**,
 **acumulados de energia frustrada e impacto financeiro na ficha**,
 **link para os documentos do MPO**, **dados de rede espelhados em
-`data/rede/` (sem download em runtime)**, **página "Dados do mapa" com
-edição inline e export**, e **camada de satélite com halo nos ícones** —
+`data/rede/` (sem download em runtime)**, **página "Dados do mapa" (conferência e
+export)**, e **camada de satélite com halo nos ícones** —
 ver §3, §3.1, §2.4, §2.5, §2.6, §4, §4.2, §4.3, §4.4, §4.5 e §4.6.
 
 Ainda não resolvidos:

@@ -1,16 +1,18 @@
 # Como editar e inserir dados do mapa
 
-O painel **não baixa nada em tempo de execução**. Tudo o que o mapa desenha
-sai de arquivos versionados em `data/`. Este documento descreve cada
-arquivo, o que cada coluna significa e como alterá-lo — à mão, pela própria
-página "Dados do mapa" ou pelo script de atualização.
+O painel **não baixa nada em tempo de execução** e **não edita nada**. Tudo
+o que o mapa desenha sai de arquivos versionados em `data/`; a edição é
+sempre manual, no arquivo, seguida de `commit`. Este documento descreve cada
+arquivo, o que cada coluna significa e como alterá-lo à mão ou (para as
+tabelas de rede) pelo script de atualização. A página "Dados do mapa" no
+painel serve só para conferir o que está em vigor e exportar.
 
 ## Visão geral
 
 | Arquivo | Conteúdo | Como atualizar |
 |---|---|---|
-| `data/localizacao_conjuntos_ons_aneel.xlsx` | conjuntos eólicos e usinas individuais | à mão (Excel) ou página "Dados do mapa" |
-| `data/bays.xlsx` | subestações do RN/PB e cidades de referência | à mão (Excel) ou página "Dados do mapa" |
+| `data/localizacao_conjuntos_ons_aneel.xlsx` | conjuntos eólicos e usinas individuais | à mão (Excel) |
+| `data/bays.xlsx` | subestações do RN/PB e cidades de referência | à mão (Excel) |
 | `data/rn_estado.geojson` | contorno do estado (máscara branca) | raramente muda — IBGE |
 | `data/rede/subestacoes_rn.csv` | SE de transmissão do RN + nível de tensão (kV) | `scripts/atualizar_dados_mapa.py --ses` |
 | `data/rede/linhas_transmissao_rn.csv` | linhas da Rede de Operação que tocam o RN | `scripts/atualizar_dados_mapa.py --linhas` |
@@ -56,13 +58,12 @@ da ficha de detalhe e dos filtros.
    e confira a logomarca (ver o "gotcha do domínio" no `CLAUDE.md`).
 5. `git diff`, depois `git add` e commit.
 
-### Pela página "Dados do mapa"
+### Conferir depois de editar
 
-A grade "Conjuntos eólicos" é editável: altere `latitude`/`longitude`,
-capacidade, agentes etc. e clique em **Salvar alterações**. A coordenada é
-recomposta para a coluna combinada e a capacidade volta ao formato
-`"109,20 MW"`. Para adicionar uma linha, use o `+` no rodapé da grade.
-Rodando localmente, a planilha do repositório é alterada — **versione**.
+Abra a página "Dados do mapa" no painel (localmente, `streamlit run app.py`)
+e confira a tabela "Conjuntos eólicos": linhas com coordenada fora do RN são
+destacadas em um aviso no topo do bloco. Baixe também
+`pontos_mapa.geojson` para checar a posição contra satélite (seção 7).
 
 ---
 
@@ -81,7 +82,7 @@ individuais" e o anexo do relatório PDF.
 | `Fonte coordenada` | proveniência da coordenada — preencher ao inserir. |
 | `Observação` | livre. |
 
-Editável só na planilha (na página "Dados do mapa" a tabela é de leitura).
+Editar na planilha (a página "Dados do mapa" só exibe).
 
 ---
 
@@ -110,7 +111,8 @@ Rótulos fixos no mapa, sem interação.
 | `Cidade` | texto exibido. |
 | `Latitude` / `Longitude` | ponto decimal. |
 
-Ambas as abas são editáveis pela página "Dados do mapa".
+Editar nas abas da planilha; a página "Dados do mapa" só exibe e sinaliza
+coordenada fora do RN.
 
 ---
 
@@ -185,7 +187,7 @@ intacto. Ao final, confira `git diff data/rede/` e faça o commit.
 ### Correção pontual
 
 Para corrigir uma linha específica (uma coordenada errada, um nome), edite
-o CSV direto — pela página "Dados do mapa" ou num editor. **Atenção:** a
+o CSV direto num editor de texto ou no Excel e commite. **Atenção:** a
 próxima execução do script sobrescreve o arquivo inteiro. Correções que
 precisam sobreviver a isso têm de ser levadas à fonte (ONS/ANEEL) ou
 tratadas no código de `core/fontes_online.py`.

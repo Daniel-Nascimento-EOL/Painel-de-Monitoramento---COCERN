@@ -1,20 +1,19 @@
-"""Página de inspeção, edição e exportação dos dados que alimentam o mapa.
+"""Página de inspeção e exportação dos dados que alimentam o mapa.
 
-Reúne num só lugar todas as tabelas de origem do mapa — as cadastrais
-(conjuntos, usinas, subestações, cidades) e as de rede geradas por
-``scripts/atualizar_dados_mapa.py`` (SE de transmissão, linhas, potências
-do SIGA) — além da tabela derivada de linhas de conexão conjunto→SE.
+Reúne num só lugar, **só para leitura**, todas as tabelas de origem do mapa
+— as cadastrais (conjuntos, usinas, subestações, cidades) e as de rede
+geradas por ``scripts/atualizar_dados_mapa.py`` (SE de transmissão, linhas,
+potências do SIGA) — além da tabela derivada de linhas de conexão
+conjunto→SE.
 
-Cada tabela pode ser:
+A edição dos dados é feita **fora do painel**: à mão nos arquivos de
+``data/`` (planilhas e CSV) e versionada por ``commit``. Esta página serve
+para conferir o que está em vigor, destacar linhas suspeitas (coordenada
+fora do RN, linha de conexão muito longa) e exportar:
 
-* **conferida** na grade, com destaque para linhas suspeitas (coordenada
-  fora do RN, linha de conexão muito longa);
-* **editada** na própria grade (``st.data_editor``) e salva de volta no
-  arquivo de origem — funciona ao rodar localmente; no ambiente publicado
-  o disco é efêmero e a alteração dura só até o próximo reinício, então o
-  fluxo recomendado lá é baixar o CSV, editar e versionar;
-* **exportada** em CSV (UTF-8 com BOM) ou, para o conjunto todo, em GeoJSON
-  para cruzar as posições com imagem de satélite.
+* CSV de cada tabela (UTF-8 com BOM, abre no Excel sem corromper acento);
+* um GeoJSON com todos os pontos e linhas, para cruzar as posições com
+  imagem de satélite no Google Earth ou no QGIS.
 
 Ver ``docs/editar_dados_do_mapa.md`` para o passo a passo de cada arquivo.
 """
@@ -28,17 +27,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from core.data_loader import (
-    BAYS_PATH,
-    DATA_PATH,
-    load_bays,
-    load_cidades,
-    load_conjuntos,
-    load_usinas,
-)
+from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
 from core.ons_rede import _ARQ_LINHAS, _ARQ_SUBESTACOES, _chave_subestacao_ons
 
-_ARQ_SIGA = Path(__file__).resolve().parent.parent / "data" / "rede" / "siga_potencias_eol_rn.csv"
+_ARQ_SIGA = (
+    Path(__file__).resolve().parent.parent / "data" / "rede" / "siga_potencias_eol_rn.csv"
+)
 
 # Bounding box do RN (com folga) — coordenada fora disso é sinalizada.
 _LAT_RN = (-7.3, -4.5)
@@ -227,87 +221,44 @@ def _geojson_pontos(
 
 
 # --------------------------------------------------------------------------
-# Persistência da edição inline
+# Bloco de exibição de uma tabela
 # --------------------------------------------------------------------------
-def _salvar_csv(df: pd.DataFrame, caminho: Path) -> None:
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(caminho, index=False, encoding="utf-8-sig")
-
-
-def _salvar_aba_xlsx(df: pd.DataFrame, caminho: Path, aba: str) -> None:
-    """Regrava uma aba do .xlsx preservando as demais. As colunas gravadas
-    são as originais da planilha (o data_loader renomeia na leitura); esta
-    função recebe o DataFrame já com os nomes originais."""
-    with pd.ExcelWriter(
-        caminho, engine="openpyxl", mode="a", if_sheet_exists="replace"
-    ) as escritor:
-        df.to_excel(escritor, sheet_name=aba, index=False)
-
-
 def _bloco_tabela(
     titulo: str,
     descricao: str,
     df: pd.DataFrame,
     nome_arquivo: str,
     *,
-    editavel: bool = False,
-    on_salvar=None,
     realce=None,
 ) -> None:
-    """Bloco padrão de uma tabela: título, descrição, grade (editável ou não),
-    aviso de linhas suspeitas e botão de download CSV.
+    """Título, descrição, aviso de linhas suspeitas, grade e download CSV.
 
-    ``on_salvar`` recebe o DataFrame editado e persiste no arquivo de origem.
     ``realce`` recebe o DataFrame e devolve uma máscara booleana das linhas a
-    sinalizar.
+    sinalizar; quando há linhas marcadas, elas são listadas à parte antes da
+    grade completa.
     """
     st.markdown(f"### {titulo}")
     st.caption(descricao)
 
     if realce is not None:
-        suspeitas = df[realce(df)]
+        marcadas = realce(df)
+        suspeitas = df[marcadas]
         if not suspeitas.empty:
             st.warning(
-                f"{len(suspeitas)} linha(s) merecem conferência — ver realce abaixo."
+                f"{len(suspeitas)} linha(s) merecem conferência "
+                "(coordenada fora do RN, linha muito longa ou sem "
+                "subestação correspondente):"
             )
+            st.dataframe(suspeitas, width="stretch", hide_index=True)
 
-    if editavel and on_salvar is not None:
-        editado = st.data_editor(
-            df,
-            width="stretch",
-            hide_index=True,
-            num_rows="dynamic",
-            key=f"editor_{nome_arquivo}",
-        )
-        col_salvar, col_baixar = st.columns([1, 1])
-        with col_salvar:
-            if st.button(f"Salvar alterações em {titulo.lower()}", key=f"save_{nome_arquivo}"):
-                try:
-                    on_salvar(editado)
-                    st.cache_data.clear()
-                    st.success(
-                        "Salvo. Recarregue a página para ver o efeito no mapa. "
-                        "Localmente, lembre de versionar o arquivo (`git add`)."
-                    )
-                except Exception as erro:  # noqa: BLE001
-                    st.error(f"Não foi possível salvar: {erro}")
-        with col_baixar:
-            st.download_button(
-                f"Baixar {nome_arquivo}.csv",
-                data=_csv_bytes(editado),
-                file_name=f"{nome_arquivo}.csv",
-                mime="text/csv",
-                key=f"dl_{nome_arquivo}",
-            )
-    else:
-        st.dataframe(df, width="stretch", hide_index=True)
-        st.download_button(
-            f"Baixar {nome_arquivo}.csv",
-            data=_csv_bytes(df),
-            file_name=f"{nome_arquivo}.csv",
-            mime="text/csv",
-            key=f"dl_{nome_arquivo}",
-        )
+    st.dataframe(df, width="stretch", hide_index=True)
+    st.download_button(
+        f"Baixar {nome_arquivo}.csv",
+        data=_csv_bytes(df),
+        file_name=f"{nome_arquivo}.csv",
+        mime="text/csv",
+        key=f"dl_{nome_arquivo}",
+    )
     st.divider()
 
 
@@ -326,15 +277,13 @@ def render() -> None:
         "Todas as tabelas que alimentam o mapa, num só lugar. O painel lê "
         "exclusivamente os arquivos em `data/` — nada é baixado ao vivo. As "
         "tabelas de rede são geradas por `scripts/atualizar_dados_mapa.py`; "
-        "as cadastrais são editadas aqui ou nas planilhas. Passo a passo em "
-        "`docs/editar_dados_do_mapa.md`."
+        "as cadastrais são planilhas em `data/`."
     )
     st.info(
-        "A edição na grade grava direto no arquivo de origem. Ao rodar "
-        "localmente, isso altera o repositório (lembre de versionar). No "
-        "painel publicado o disco é temporário: a alteração vale só até o "
-        "próximo reinício — lá, prefira baixar o CSV, editar e commitar.",
-        icon="✏️",
+        "Esta página é só para conferência e exportação. A edição dos dados "
+        "é feita fora do painel: à mão nos arquivos de `data/` e versionada "
+        "por `commit`. Passo a passo em `docs/editar_dados_do_mapa.md`.",
+        icon="📄",
     )
     st.divider()
 
@@ -355,104 +304,52 @@ def render() -> None:
     )
     st.divider()
 
-    # --- Tabelas cadastrais (editáveis) -----------------------------------
-    def _salvar_conjuntos(editado: pd.DataFrame) -> None:
-        # Reescreve a aba Localizacao com os nomes de coluna originais.
-        original = pd.read_excel(DATA_PATH, sheet_name="Localizacao")
-        renome = {
-            "conjunto": "Conjunto",
-            "id_ons": "id_ons",
-            "municipios": "Município(s)",
-            "qtd_usinas": "Qtd. usinas",
-            "qtd_aerogeradores": "Qtde. aerogeradores",
-            "ponto_conexao": "Ponto de conexão",
-            "agente_proprietario": "Agente Proprietário",
-            "agente_operador": "Agente Operador",
-            "ajustamento_operativo": "Ajustamento Operativo",
-        }
-        saida = editado.rename(columns=renome)
-        # Recompõe a coluna combinada de coordenada e preserva as demais
-        # colunas originais (logos etc.) a partir do arquivo atual.
-        saida["Localização (lat, long)"] = (
-            editado["latitude"].astype(str) + ", " + editado["longitude"].astype(str)
-        )
-        saida["Capacidade instalada"] = editado["capacidade_mw"].map(
-            lambda v: f"{v:.2f} MW".replace(".", ",")
-        )
-        for col in original.columns:
-            if col not in saida.columns:
-                saida[col] = original.get(col)
-        saida = saida[original.columns]
-        _salvar_aba_xlsx(saida, DATA_PATH, "Localizacao")
-
+    # --- Tabelas cadastrais ---------------------------------------------
     _bloco_tabela(
         "Conjuntos eólicos",
         f"{len(df_conjuntos)} conjuntos. `latitude`/`longitude` posicionam o "
-        "marcador de turbina. Editável — a coordenada volta para a coluna "
-        "combinada da planilha ao salvar.",
+        "marcador de turbina. Editar na aba `Localizacao` de "
+        "`data/localizacao_conjuntos_ons_aneel.xlsx`.",
         df_conjuntos.drop(
-            columns=["logo_proprietario", "logo_operador", "localizacao", "chave", "chave_subestacao"],
+            columns=[
+                "logo_proprietario",
+                "logo_operador",
+                "localizacao",
+                "chave",
+                "chave_subestacao",
+            ],
             errors="ignore",
         ),
         "conjuntos",
-        editavel=True,
-        on_salvar=_salvar_conjuntos,
         realce=lambda d: d.apply(
             lambda r: _fora_do_rn(r["latitude"], r["longitude"]), axis=1
         ),
     )
-
-    def _salvar_bays(editado: pd.DataFrame) -> None:
-        renome = {
-            "agente_operador": "Agente Operador",
-            "subestacao": "Subestação",
-            "latitude": "latitude",
-            "longitude": "longitude",
-        }
-        saida = editado.rename(columns=renome)
-        original = pd.read_excel(BAYS_PATH, sheet_name="Bays")
-        for col in original.columns:
-            if col not in saida.columns:
-                saida[col] = original.get(col)
-        saida = saida[[c for c in original.columns if c in saida.columns]]
-        _salvar_aba_xlsx(saida, BAYS_PATH, "Bays")
 
     _bloco_tabela(
         "Subestações (bays.xlsx)",
         f"{len(df_bays)} subestações do RN e da PB. Marcador de SE e ponta das "
-        "linhas de conexão. As colunas de tensão vêm da tabela de rede e não "
-        "são salvas aqui.",
-        df_bays.drop(
-            columns=["chave", "tensao_max_kv", "tensoes_kv", "agente_principal"],
-            errors="ignore",
-        ),
+        "linhas de conexão. Editar na aba `Bays` de `data/bays.xlsx`. As "
+        "colunas de tensão vêm da tabela de rede.",
+        df_bays,
         "subestacoes_bays",
-        editavel=True,
-        on_salvar=_salvar_bays,
         realce=lambda d: d.apply(
             lambda r: _fora_do_rn(r["latitude"], r["longitude"]), axis=1
         ),
     )
-
-    def _salvar_cidades(editado: pd.DataFrame) -> None:
-        saida = editado.rename(
-            columns={"cidade": "Cidade", "latitude": "Latitude", "longitude": "Longitude"}
-        )
-        _salvar_aba_xlsx(saida, BAYS_PATH, "Cidades_RN")
 
     _bloco_tabela(
         "Cidades de referência",
-        f"{len(df_cidades)} cidades exibidas como rótulo fixo no mapa.",
+        f"{len(df_cidades)} cidades exibidas como rótulo fixo no mapa. "
+        "Editar na aba `Cidades_RN` de `data/bays.xlsx`.",
         df_cidades,
         "cidades_referencia",
-        editavel=True,
-        on_salvar=_salvar_cidades,
         realce=lambda d: d.apply(
             lambda r: _fora_do_rn(r["latitude"], r["longitude"]), axis=1
         ),
     )
 
-    # --- Tabela derivada (só leitura) -----------------------------------
+    # --- Tabela derivada ----------------------------------------------
     _bloco_tabela(
         "Linhas de conexão conjunto–subestação",
         "Derivada: junção `Ponto de conexão` (conjunto) ↔ `Subestação` (bays), "
@@ -464,12 +361,13 @@ def render() -> None:
         | (d["distancia_km"] > _LIMITE_LINHA_KM),
     )
 
-    # --- Tabelas de rede (geradas pelo script; editáveis nos CSV) --------
+    # --- Tabelas de rede (geradas pelo script) -----------------------
     st.markdown("### Tabelas de rede")
     st.caption(
         "Geradas por `python scripts/atualizar_dados_mapa.py` a partir dos "
-        "cadastros do ONS e da ANEEL. Editáveis aqui para correção pontual; "
-        "a próxima execução do script sobrescreve o arquivo."
+        "cadastros do ONS e da ANEEL. Para corrigir uma linha, edite o CSV "
+        "em `data/rede/` e commite (a próxima execução do script sobrescreve "
+        "o arquivo)."
     )
 
     try:
@@ -480,8 +378,6 @@ def render() -> None:
             "transmissão do RN. Posiciona a ponta das linhas de transmissão.",
             df_ses,
             "subestacoes_rn",
-            editavel=True,
-            on_salvar=lambda ed: _salvar_csv(ed, _ARQ_SUBESTACOES),
             realce=lambda d: d.apply(
                 lambda r: _fora_do_rn(r["latitude"], r["longitude"]), axis=1
             ),
@@ -497,8 +393,6 @@ def render() -> None:
             "de rede, comprimento e agente. Sem geometria — só subestação de/para.",
             df_lt,
             "linhas_transmissao_rn",
-            editavel=True,
-            on_salvar=lambda ed: _salvar_csv(ed, _ARQ_LINHAS),
         )
     except FileNotFoundError:
         st.warning("`data/rede/linhas_transmissao_rn.csv` ausente — rode o script.")
@@ -511,17 +405,16 @@ def render() -> None:
             "Junta com a aba Detalhamento pelo CEG e alimenta o popup da usina.",
             df_siga,
             "siga_potencias_eol_rn",
-            editavel=True,
-            on_salvar=lambda ed: _salvar_csv(ed, _ARQ_SIGA),
         )
     except FileNotFoundError:
         st.warning("`data/rede/siga_potencias_eol_rn.csv` ausente — rode o script.")
 
-    # --- Usinas individuais (só leitura) --------------------------------
+    # --- Usinas individuais ----------------------------------------
     _bloco_tabela(
         "Usinas individuais (aba Detalhamento)",
         f"{len(df_usinas)} usinas. Camada opcional no mapa. Coordenada por "
-        "usina, com a origem na coluna `fonte_coordenada`. Editar na planilha.",
+        "usina, com a origem na coluna `fonte_coordenada`. Editar na aba "
+        "`Detalhamento` de `data/localizacao_conjuntos_ons_aneel.xlsx`.",
         df_usinas.drop(columns=["chave"], errors="ignore"),
         "usinas",
     )
