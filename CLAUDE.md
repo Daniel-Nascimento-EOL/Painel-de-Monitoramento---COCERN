@@ -1,7 +1,7 @@
 # Painel de Monitoramento de Constrained-off — Conjuntos Eólicos do RN
 
 > Trabalho acadêmico de mestrado. Guia de referência do projeto para o Claude Code.
-> Última atualização: 2026-09-02.
+> Última atualização: 2026-09-09.
 
 ---
 
@@ -9,15 +9,18 @@
 
 Painel web (Streamlit) de monitoramento de **constrained-off** (corte de
 geração por restrição operativa) dos conjuntos eólicos do Rio Grande do
-Norte. Três entregas concluídas: (1) mapa de localização interativo, com
-subestações/cidades fixas, linhas de conexão e ficha de detalhe por
-conjunto; (2) motor de **Energia Frustrada** com download automático dos
-dados abertos do ONS (constrained-off) e da CCEE (PLD horário) e cálculo
-das 5 metodologias definidas pelo usuário; (3) **Painel de Preço Horário
-(PLD)** do submercado Nordeste, no estilo do painel da própria CCEE.
-Próximas fases (ficha de detalhe de subestação com documentos vinculados,
-linhas de transmissão coloridas por tensão) dependem de dados de nível de
-tensão (kV) por subestação, ainda não recebidos.
+Norte. Quatro entregas concluídas: (1) mapa de localização interativo, com
+subestações/cidades fixas, linhas de conexão, camada de satélite e ficha de
+detalhe por conjunto; (2) motor de **Energia Frustrada** com download
+automático dos dados abertos do ONS (constrained-off) e da CCEE (PLD
+horário) e cálculo das 5 metodologias definidas pelo usuário; (3) **Painel
+de Preço Horário (PLD)** do submercado Nordeste, no estilo do painel da
+própria CCEE; (4) página **Dados do mapa** — todas as tabelas de origem num
+só lugar, para conferência e exportação. Os dados de rede (subestações,
+linhas, potências do SIGA) são espelhados em `data/rede/` e o painel não
+baixa nada em tempo de execução para desenhar o mapa (ver §2.6).
+Próxima fase (ficha de detalhe de subestação com documentos vinculados)
+depende dos PDFs de instrução de operação, ainda não recebidos.
 
 - **Stack:** Python 3.13 / Streamlit / Folium (mapa) / Plotly (gráficos) /
   Pandas / NumPy / Shapely / Pillow (ícones) / httpx + Requests (downloads)
@@ -32,10 +35,10 @@ tensão (kV) por subestação, ainda não recebidos.
 ```
 streamlit run app.py
         ↓
-app.py                        ── page_config, CSS global, roteador (radio na sidebar: Mapa | Energia Frustrada | Preço Horário)
-  ├── ui/mapa.py               ── página do mapa: filtros, métricas, render do mapa, botão "baixar PNG do mapa"
-  │     ├── core/data_loader.py    ── carrega/normaliza Excel (@st.cache_data)
-  │     ├── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas)
+app.py                        ── page_config, CSS global, roteador (radio na sidebar: Mapa | Energia Frustrada | Preço Horário | Dados do mapa)
+  ├── ui/mapa.py               ── página do mapa: filtros, métricas, render do mapa, camada de satélite, botão "baixar PNG do mapa"
+  │     ├── core/data_loader.py    ── carrega/normaliza Excel + CSV de data/rede/ (@st.cache_data)
+  │     ├── viz/map_charts.py      ── constrói o folium.Map (ícones, máscara, bounds, linhas, camada satélite + halo)
   │     └── viz/mapa_estatico.py   ── mesmo mapa como PNG (staticmap) — download e mini-mapa do PDF
   ├── ui/energia_frustrada.py  ── página de energia frustrada: filtros (mês, conjunto, metodologia), export PDF
   │     ├── core/ons_coff.py       ── download ONS (COFF eólico, RN) + 5 metodologias
@@ -43,19 +46,25 @@ app.py                        ── page_config, CSS global, roteador (radio na
   │     ├── core/ccee_pld.py       ── download CCEE (PLD horário NE) com cascata de fallback
   │     ├── core/relatorio_dados.py ── compila o "dossiê" por conjunto (cadastro + SE/linhas + COFF do mês)
   │     └── viz/pdf_relatorio.py    ── relatório PDF consolidado (ReportLab + matplotlib): capa, resumo RN, seção/conjunto
-  └── ui/painel_pld.py         ── painel de preço horário: PLD da hora, curva do dia (Ontem/Hoje/Amanhã), evolução recente
+  ├── ui/painel_pld.py         ── painel de preço horário: PLD da hora, curva do dia (Ontem/Hoje/Amanhã), evolução recente
+  └── ui/dados.py              ── página "Dados do mapa": todas as tabelas de origem (só leitura), realce de suspeitas, export CSV/GeoJSON
 
 core/
   ├── agentes.py                ── cadastro dos agentes + logomarcas locais
-  └── documentos_ons.py         ── resolve o ajustamento operativo no PDF do MPO
+  ├── documentos_ons.py         ── resolve o ajustamento operativo no PDF do MPO
+  ├── ons_rede.py               ── LÊ data/rede/*.csv (SE, linhas) + normalização de nome de SE — não baixa nada
+  ├── aneel_siga.py             ── LÊ data/rede/siga_potencias_eol_rn.csv — não baixa nada
+  └── fontes_online.py          ── ÚNICO módulo que vai à web para os dados de rede; NÃO importado pelo app, só pelo script
 
 scripts/
   ├── baixar_logos_agentes.py   ── baixa as logomarcas para data/icons/agentes/
-  └── atualizar_cache_coff.py   ── pré-aquece data/cache_coff/
+  ├── atualizar_cache_coff.py   ── pré-aquece data/cache_coff/
+  ├── atualizar_dados_mapa.py   ── consulta ONS/ANEEL e regrava data/rede/*.csv (--ses --linhas --siga)
+  └── gerar_geojson_auditoria.py ── regenera docs/pontos_mapa.geojson
 
 data/
   ├── localizacao_conjuntos_ons_aneel.xlsx   ── conjuntos: ONS/ANEEL + id_ons, capacidade, ponto de
-  │                                              conexão, agentes proprietário/operador (+ logos)
+  │                                              conexão, agentes proprietário/operador (colunas de logo mortas)
   ├── bays.xlsx                                ── subestações do RN/PB (agente operador, lat/long) e
   │                                              cidades de referência
   ├── rn_estado.geojson                        ── contorno do RN (IBGE, baixado uma vez)
@@ -63,14 +72,28 @@ data/
   │                                              CCEE — é o que o deploy usa; ver §2.4 e §6)
   ├── cache_coff/                              ── Parquet do COFF agregado por conjunto/mês
   │                                              (~9 KB/mês, versionado — ver §4.4)
+  ├── rede/                                    ── espelho local das fontes de rede (ver §2.6); gerado por
+  │     ├── subestacoes_rn.csv                    scripts/atualizar_dados_mapa.py, versionado
+  │     ├── linhas_transmissao_rn.csv
+  │     └── siga_potencias_eol_rn.csv
   └── icons/
         ├── logo_aero.jpg                      ── ícone de turbina (marcador de conjunto)
         ├── logo_se.jpeg                        ── ícone de subestação (marcador de bay)
         └── agentes/                            ── 30 logomarcas oficiais (ver §2.5)
 
 docs/
-  └── fontes_dados_abertos.md   ── levantamento de datasets ONS/ANEEL/COSERN
+  ├── fontes_dados_abertos.md   ── levantamento de datasets ONS/ANEEL/COSERN
+  ├── editar_dados_do_mapa.md   ── guia de edição/inserção manual de cada arquivo de data/
+  └── pontos_mapa.geojson       ── retrato de todos os pontos/linhas do mapa p/ conferência com satélite
 ```
+
+> **O painel não baixa dados de rede em tempo de execução.** Tudo o que o
+> mapa desenha sai de arquivos em `data/`. As três fontes que eram baixadas
+> ao vivo (subestações do ONS, linhas de transmissão do ONS, potências do
+> SIGA/ANEEL) passaram a ser espelhadas em `data/rede/*.csv` por
+> `scripts/atualizar_dados_mapa.py` — ver §2.6. O constrained-off (§2.3) e o
+> PLD (§2.4) seguem com download ao vivo nas páginas Energia Frustrada e
+> Preço Horário, com o cache/histórico em disco como base.
 
 ---
 
@@ -103,6 +126,10 @@ uppercase). Validado: 54/54 sem sobra.
   uppercase). Validado: 15/15 sem sobra.
 - **Cidades_RN** (21 linhas): cidades de referência pra ficarem fixas no
   mapa (sem interação, só rótulo).
+
+Ambas as planilhas são editadas **à mão** (Excel) e versionadas por commit.
+A página **Dados do mapa** (§4.6) só exibe e sinaliza linhas suspeitas — não
+grava nada.
 
 ### 2.3 Dataset ONS de constrained-off (ao vivo)
 
@@ -186,6 +213,39 @@ referência do cliente, **zero divergências**. Pisos anuais batem com os
 Despachos da ANEEL (49,77 em 2021 · 55,70 em 2022 · 69,04 em 2023 · 61,07
 em 2024 · 58,60 em 2025 · 57,31 em 2026). Cobertura 01/01/2021–hoje, sem
 lacunas.
+
+---
+
+### 2.6 Dados de rede — espelho local em `data/rede/` (sem download em runtime)
+
+As três fontes de rede que antes eram baixadas ao vivo pelo painel passaram
+a ser **arquivos versionados**, lidos direto do disco:
+
+| Arquivo | Gerado a partir de | Loader |
+|---|---|---|
+| `data/rede/subestacoes_rn.csv` | cadastro de subestações do ONS (S3) | `core/ons_rede.py::ler_subestacoes_rn()` |
+| `data/rede/linhas_transmissao_rn.csv` | cadastro de linhas de transmissão do ONS (S3) | `core/ons_rede.py::ler_linhas_rn()` |
+| `data/rede/siga_potencias_eol_rn.csv` | SIGA da ANEEL (potência por CEG) | `core/aneel_siga.py::ler_potencias_eol_rn()` |
+
+- **`core/fontes_online.py`** é o **único** módulo que consulta a web para
+  esses dados. **Não é importado pelo aplicativo** — só por
+  `scripts/atualizar_dados_mapa.py`. Mantém `requests`, sem `streamlit`.
+- **`scripts/atualizar_dados_mapa.py`** baixa, **valida** (contagem mínima,
+  coordenada dentro do bounding box do RN, colunas-chave presentes) e
+  regrava os três CSV. Seções independentes: `--ses --linhas --siga`
+  (default: as três). Uma fonte fora do ar não impede as demais; o arquivo
+  da que falhou fica intacto e o script sai com código != 0.
+- **Fluxo:** rodar o script → conferir `git diff data/rede/` → commit →
+  push (o site é o do GitHub — ver §6).
+- **Gotcha da coluna `tensoes_kv`**: era lista Python (`[138, 230]`); no CSV
+  vira string `"138;230"` e é reconstruída como lista na leitura. Os
+  consumidores (`viz/map_charts.py`, `viz/mapa_estatico.py`,
+  `viz/pdf_relatorio.py`) já tratavam ambos os casos com `isinstance`.
+- O **constrained-off** (§2.3) e o **PLD** (§2.4) continuam com download ao
+  vivo nas páginas Energia Frustrada e Preço Horário, apoiados no cache
+  Parquet (§4.4) e no histórico CSV. Não foram movidos porque recebem dado
+  novo todo mês; o mapa não depende deles.
+- Documentação de edição de cada arquivo: `docs/editar_dados_do_mapa.md`.
 
 ---
 
@@ -308,6 +368,19 @@ suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
   sem proporcionalidade à qtd. de usinas.
 - **Prefixo `SE `**: `_nome_subestacao()` garante `SE <nome>` no tooltip e
   popup das subestações (idempotente).
+- **Camada de satélite alternável**: `folium.TileLayer` Esri "World Imagery"
+  (`ESRI_IMAGERY_URL`, também sem API key) como overlay opcional, `show=False`,
+  exposto por um `folium.LayerControl` no canto. O basemap deixou de ser
+  `tiles=` do `folium.Map` (agora `tiles=None`) e virou um `TileLayer`
+  nomeado com `control=False`; o contorno e a máscara também são
+  `control=False` — assim o seletor lista **só** o satélite.
+- **Halo branco com o satélite ligado**: um listener de
+  `overlayadd`/`overlayremove` (no `_script_escala_icones()`) põe/tira a
+  classe `.satelite-ativo` no container do mapa. O CSS então aplica um
+  `drop-shadow` branco em quatro sentidos aos ícones (`.marcador-escala`, os
+  SVGs de turbina) e um `text-shadow` reforçado + cor escura aos rótulos de
+  cidade (`.rotulo-cidade`). Sem a camada, nada muda. O mapa estático (PNG)
+  não tem satélite.
 
 ### 3.1 Mapa estático (PNG) — `viz/mapa_estatico.py`
 
@@ -462,6 +535,26 @@ Rev.17 do 2NO, hoje na Rev.20). A revisão vigente é descoberta por sondagem
 que nunca quebra. Convém atualizar `revisao_conhecida` de tempos em tempos
 para a sondagem seguir barata (~0,3 s).
 
+### 4.6 Página "Dados do mapa" — `ui/dados.py`
+
+Reúne num só lugar, **só para leitura**, todas as tabelas que alimentam o
+mapa: cadastrais (conjuntos, subestações `bays`, cidades), de rede
+(`data/rede/*.csv` — §2.6) e a derivada de linhas de conexão conjunto→SE.
+Duas funções:
+
+- **Conferir**: cada tabela mostra, antes da grade completa, um aviso com as
+  linhas suspeitas — coordenada fora do bounding box do RN
+  (`_LAT_RN`/`_LON_RN`), linha de conexão acima de `_LIMITE_LINHA_KM`
+  (60 km) ou sem SE correspondente.
+- **Exportar**: CSV (UTF-8 com BOM) por tabela + um GeoJSON com os 453
+  pontos/linhas para conferência com satélite (mesmo conteúdo em
+  `docs/pontos_mapa.geojson`, regenerável por
+  `scripts/gerar_geojson_auditoria.py`).
+
+**A página não edita nada.** A alteração dos dados é sempre manual, no
+arquivo de `data/` (planilha ou CSV), seguida de commit — decisão do
+usuário. Não reintroduzir `st.data_editor` nem gravação a partir da UI.
+
 ---
 
 ## 5. Design
@@ -491,6 +584,10 @@ Painel é pra **trabalho de mestrado** — usuário rejeitou o visual padrão
   `.github/workflows/atualizar-pld.yml` (§2.4). Rodar
   `python scripts/atualizar_pld_local.py` à mão só antes de um deploy
   urgente com dados recém-publicados.
+- **Dados de rede** (`data/rede/*.csv`, §2.6): não há workflow. Rodar
+  `python scripts/atualizar_dados_mapa.py` à mão quando o cadastro do ONS ou
+  o SIGA mudarem (SE nova, linha nova, correção de coordenada), conferir
+  `git diff data/rede/` e commitar. O painel só reflete depois do push.
 - **`gh` CLI**: instalado via `winget install GitHub.cli`, em
   `C:\Program Files\GitHub CLI\gh.exe`. Autenticado como
   **Daniel-Nascimento-EOL**. Terminal aberto antes da instalação não vê o
@@ -511,9 +608,11 @@ cadastro ONS de subestações/linhas), **download PNG do mapa**,
 **relatório PDF consolidado de constrained-off por conjunto**,
 **impacto financeiro pelo PLD real da CCEE**, **painel de preço horário**,
 **logomarcas oficiais dos agentes**, **filtro de subestações de transmissão**,
-**acumulados de energia frustrada e impacto financeiro na ficha** e
-**link para os documentos do MPO** — ver §3, §3.1, §2.4, §2.5, §4, §4.2,
-§4.3, §4.4 e §4.5.
+**acumulados de energia frustrada e impacto financeiro na ficha**,
+**link para os documentos do MPO**, **dados de rede espelhados em
+`data/rede/` (sem download em runtime)**, **página "Dados do mapa" (conferência e
+export)**, e **camada de satélite com halo nos ícones** —
+ver §3, §3.1, §2.4, §2.5, §2.6, §4, §4.2, §4.3, §4.4, §4.5 e §4.6.
 
 Ainda não resolvidos:
 

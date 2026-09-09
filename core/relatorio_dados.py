@@ -16,7 +16,7 @@ import streamlit as st
 from core.ccee_pld import anexar_pld, baixar_pld_nordeste
 from core.data_loader import load_bays, load_conjuntos, load_usinas
 from core.ons_coff import METODOLOGIAS, baixar_mes_rn, calcular_metodologias
-from core.ons_rede import baixar_linhas_rn
+from core.ons_rede import ler_linhas_rn
 
 _COLS_EF = [f"energia_frustrada_{i}" for i in range(1, 6)]
 
@@ -146,10 +146,10 @@ def montar_relatorio(
     df_usi = load_usinas()
     df_bays = load_bays()
     try:
-        df_linhas = baixar_linhas_rn()
+        df_linhas = ler_linhas_rn()
     except Exception:
         df_linhas = None
-        avisos.append("Não foi possível baixar as linhas de transmissão do ONS.")
+        avisos.append("Não foi possível ler as linhas de transmissão (data/rede/).")
 
     coff = baixar_mes_rn(ano, mes)
     coff = calcular_metodologias(coff)

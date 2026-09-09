@@ -23,7 +23,7 @@ from core.ons_coff import (
     calcular_metodologias,
     meses_disponiveis,
 )
-from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
+from core.ons_rede import ler_linhas_rn, ler_subestacoes_rn
 from core.relatorio_dados import montar_relatorio
 from viz.mapa_estatico import gerar_png_mapa
 from viz.pdf_relatorio import gerar_pdf
@@ -41,11 +41,11 @@ def _minimapas_por_conjunto(dossies, camadas) -> dict:
     df_conj = load_conjuntos()
     df_bays = load_bays()
     try:
-        df_linhas = baixar_linhas_rn()
+        df_linhas = ler_linhas_rn()
     except Exception:
         df_linhas = None
     try:
-        df_ses = baixar_subestacoes_rn()
+        df_ses = ler_subestacoes_rn()
     except Exception:
         df_ses = None
 

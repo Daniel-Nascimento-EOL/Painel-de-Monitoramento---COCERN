@@ -29,6 +29,17 @@ ESRI_TILES_URL = (
 )
 ESRI_TILES_ATTR = "Tiles © Esri — Esri, DeLorme, NAVTEQ"
 
+# Camada de satélite (Esri "World Imagery") — overlay opcional para conferir
+# a posição dos marcadores contra a imagem real (parque eólico e pátio de
+# subestação são visíveis do alto). Também servida sem API key.
+ESRI_IMAGERY_URL = (
+    "https://server.arcgisonline.com/ArcGIS/rest/services/"
+    "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+)
+ESRI_IMAGERY_ATTR = (
+    "Imagery © Esri — Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+)
+
 CENTRO_RN = (-5.6, -36.4)
 # Bbox real do RN (data/rn_estado.geojson) + margem mínima — pan quase travado no estado.
 _BOUNDS_RN = [[-7.10, -38.72], [-4.70, -34.83]]
@@ -155,6 +166,26 @@ def _script_escala_icones() -> folium.Element:
     <style>
       .leaflet-marker-pane {{ z-index: 640; }}
       .marcador-escala {{ will-change: transform; }}
+      /* Com a camada de satélite ligada (classe .satelite-ativo no container
+         do mapa), os ícones tingidos e os rótulos ficam quase invisíveis
+         sobre a imagem escura. Um halo branco espesso — via drop-shadow em
+         quatro sentidos — recorta cada marcador do fundo. */
+      .satelite-ativo .marcador-escala {{
+        filter:
+          drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff)
+          drop-shadow(1px 1px 1px #fff) drop-shadow(-1px -1px 1px #fff);
+      }}
+      .satelite-ativo .marcador-escala-wrap svg,
+      .satelite-ativo .leaflet-marker-icon svg {{
+        filter:
+          drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff)
+          drop-shadow(1px 1px 1px #fff) drop-shadow(-1px -1px 1px #fff) !important;
+      }}
+      .satelite-ativo .rotulo-cidade {{
+        color: #12303a !important;
+        text-shadow:
+          0 0 3px #fff, 0 0 3px #fff, 1px 1px 2px #fff, -1px -1px 2px #fff !important;
+      }}
       /* A ficha do conjunto lista as 5 metodologias duas vezes (energia e
          impacto) e ficava mais alta que o mapa, saindo da tela — o Leaflet
          só reposiciona (autoPan) o popup que cabe. Limita a altura e deixa
@@ -192,6 +223,18 @@ def _script_escala_icones() -> folium.Element:
         mapa.on('zoomend', reescalar);
         mapa.whenReady(reescalar);
         reescalar();
+
+        // Halo branco nos ícones enquanto a camada de satélite estiver ligada.
+        var alvo = mapa.getContainer();
+        function ehSatelite(e) {{
+          return e && e.name && e.name.indexOf('Sat') === 0;
+        }}
+        mapa.on('overlayadd', function (e) {{
+          if (ehSatelite(e)) alvo.classList.add('satelite-ativo');
+        }});
+        mapa.on('overlayremove', function (e) {{
+          if (ehSatelite(e)) alvo.classList.remove('satelite-ativo');
+        }});
       }}
       iniciar();
     }})();
@@ -220,7 +263,7 @@ def _icone_turbina(cor: str, tamanho: int) -> folium.DivIcon:
 
 def _rotulo_cidade(nome: str) -> folium.DivIcon:
     html = (
-        f'<div style="font-size:11px; font-style:italic; color:{_COR_CIDADE}; '
+        f'<div class="rotulo-cidade" style="font-size:11px; font-style:italic; color:{_COR_CIDADE}; '
         f'white-space:nowrap; transform:translateX(-50%); '
         f'text-shadow:0 1px 2px rgba(255,255,255,0.9), 0 -1px 2px rgba(255,255,255,0.9);">'
         f"{nome}</div>"
@@ -427,8 +470,7 @@ def build_map(
         location=CENTRO_RN,
         zoom_start=7,
         min_zoom=7,
-        tiles=ESRI_TILES_URL,
-        attr=ESRI_TILES_ATTR,
+        tiles=None,
         control_scale=True,
         max_bounds=True,
         min_lat=_BOUNDS_RN[0][0],
@@ -438,9 +480,16 @@ def build_map(
         zoom_control=True,
     )
 
+    folium.TileLayer(
+        tiles=ESRI_TILES_URL,
+        attr=ESRI_TILES_ATTR,
+        name="Mapa base (Esri)",
+        control=False,
+    ).add_to(m)
+
     contorno = _carregar_contorno_rn()
 
-    folium.GeoJson(
+    _mascara = folium.GeoJson(
         _mascara_fora_rn(contorno),
         style_function=lambda _: {
             "fillColor": "#ffffff",
@@ -448,11 +497,27 @@ def build_map(
             "fillOpacity": 1,
         },
         interactive=False,
+        name="_mascara_rn",
+        control=False,
+    )
+    _mascara.add_to(m)
+
+    # Camada de satélite alternável — para conferir a posição dos marcadores
+    # contra a imagem real. Fica desligada por padrão; quando ligada, cobre a
+    # máscara branca e o basemap, e os marcadores continuam por cima (panes).
+    folium.TileLayer(
+        tiles=ESRI_IMAGERY_URL,
+        attr=ESRI_IMAGERY_ATTR,
+        name="Satélite (conferência de posição)",
+        overlay=True,
+        control=True,
+        show=False,
     ).add_to(m)
 
     folium.GeoJson(
         contorno,
         name="Rio Grande do Norte",
+        control=False,
         style_function=lambda _: {
             "fillColor": "transparent",
             "color": _COR_CONTORNO,
@@ -688,6 +753,10 @@ def build_map(
         m.get_root().html.add_child(folium.Element(css_logos))
 
     m.get_root().html.add_child(_script_escala_icones())
+
+    # Seletor de camadas — só a camada de satélite é alternável aqui; as
+    # demais seguem controladas pelo expander "Camadas do mapa" da sidebar.
+    folium.LayerControl(collapsed=True, position="topright").add_to(m)
 
     return m
 
