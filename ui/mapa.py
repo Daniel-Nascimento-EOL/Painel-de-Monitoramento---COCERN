@@ -7,7 +7,7 @@ from datetime import date
 
 from core.coff_cache import acumulado_do_ano
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
-from core.ons_rede import baixar_linhas_rn, baixar_subestacoes_rn
+from core.ons_rede import ler_linhas_rn, ler_subestacoes_rn
 from viz.map_charts import CAMADAS_PADRAO, build_map_html, df_para_key
 from viz.mapa_estatico import gerar_png_mapa_cache
 
@@ -71,13 +71,13 @@ def render() -> None:
     df_bays = load_bays()
     df_cidades = load_cidades()
     try:
-        df_linhas = baixar_linhas_rn()
+        df_linhas = ler_linhas_rn()
     except Exception:
         df_linhas = None
     try:
         # Índice das SE de transmissão do RN — posiciona as pontas das linhas
         # de transmissão; os marcadores de SE continuam vindo de bays.xlsx.
-        df_ses = baixar_subestacoes_rn()
+        df_ses = ler_subestacoes_rn()
     except Exception:
         df_ses = None
 

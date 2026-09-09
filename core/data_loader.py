@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from core.aneel_siga import baixar_potencias_eol_rn
-from core.ons_rede import _chave_subestacao_ons, baixar_subestacoes_rn
+from core.aneel_siga import ler_potencias_eol_rn
+from core.ons_rede import _chave_subestacao_ons, ler_subestacoes_rn
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "localizacao_conjuntos_ons_aneel.xlsx"
 BAYS_PATH = Path(__file__).resolve().parent.parent / "data" / "bays.xlsx"
@@ -98,10 +98,11 @@ def load_usinas() -> pd.DataFrame:
     df["chave"] = df["conjunto"].apply(_chave_conjunto)
     df["ceg"] = df["ceg"].astype(str).str.strip()
 
-    # Enriquecimento com a potência por usina (ANEEL SIGA, join por CEG).
-    # Fallback gracioso: se o SIGA não carregar, as colunas de potência
-    # ficam ausentes e o mapa apenas não as exibe.
-    siga = baixar_potencias_eol_rn()
+    # Enriquecimento com a potência por usina (ANEEL SIGA, join por CEG),
+    # lido de data/rede/siga_potencias_eol_rn.csv. Fallback gracioso: se o
+    # arquivo não existir, as colunas de potência ficam ausentes e o mapa
+    # apenas não as exibe.
+    siga = ler_potencias_eol_rn()
     if siga is not None:
         df = df.merge(siga, on="ceg", how="left")
 
@@ -114,11 +115,12 @@ def load_bays() -> pd.DataFrame:
     df = df.rename(columns=_COLUNAS_BAYS)
     df["chave"] = df["subestacao"].apply(_chave_subestacao)
 
-    # Anexa o nível de tensão (kV) do cadastro de subestações do ONS.
-    # Fallback gracioso: se o ONS não responder, as colunas de tensão ficam
-    # ausentes e o mapa apenas não colore por tensão.
+    # Anexa o nível de tensão (kV) do cadastro de subestações do ONS, lido de
+    # data/rede/subestacoes_rn.csv. Fallback gracioso: se o arquivo não
+    # existir, as colunas de tensão ficam ausentes e o mapa apenas não
+    # colore por tensão.
     try:
-        ses = baixar_subestacoes_rn()
+        ses = ler_subestacoes_rn()
     except Exception:
         ses = None
     if ses is not None and not ses.empty:

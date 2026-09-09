@@ -1,32 +1,29 @@
-"""Download dos dados cadastrais de rede do ONS (subestações e linhas de
-transmissão da Rede de Operação), filtrados para o Rio Grande do Norte.
+"""Dados cadastrais de rede do ONS (subestações e linhas de transmissão da
+Rede de Operação) do Rio Grande do Norte, **lidos de arquivos versionados
+em ``data/rede/``**.
 
-Fontes (mesmo S3 público do ONS já usado em ``core/ons_coff.py``):
-- https://dados.ons.org.br/dataset/subestacao — subestações com tensão base
-  >= 69 kV, uma linha por nível de tensão, com latitude/longitude.
-- https://dados.ons.org.br/dataset/linha-transmissao — linhas da Rede de
-  Operação com tensão >= 230 kV (sem geometria — só subestação de/para).
+O painel não baixa esses cadastros em tempo de execução. Os arquivos são
+gerados fora do runtime por ``scripts/atualizar_dados_mapa.py`` (que usa
+``core/fontes_online.py``), conferidos e versionados:
 
-Ambos os arquivos são snapshots (sem histórico), atualizados 2x ao dia
-pelo ONS (12h e 19h). Cache ``@st.cache_data(ttl=24h)``.
+- ``data/rede/subestacoes_rn.csv`` — uma linha por subestação de
+  transmissão do RN, com nível de tensão (kV) e lat/long;
+- ``data/rede/linhas_transmissao_rn.csv`` — linhas da Rede de Operação que
+  tocam o RN (sem geometria — só subestação de/para), com tensão e agente.
+
+Este módulo mantém apenas a leitura desses arquivos e os utilitários de
+normalização de nome de subestação, compartilhados com o resto do painel.
 """
 
 import re
 import unicodedata
+from pathlib import Path
 
 import pandas as pd
-import requests
-import streamlit as st
 
-_URL_SUBESTACOES = (
-    "https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/subestacao/SUBESTACAO.csv"
-)
-_URL_LINHAS = (
-    "https://ons-aws-prod-opendata.s3.amazonaws.com/dataset/"
-    "linha_transmissao/LINHA_TRANSMISSAO.csv"
-)
-
-_NOME_ESTADO_RN = "RIO GRANDE DO NORTE"
+_REDE_DIR = Path(__file__).resolve().parent.parent / "data" / "rede"
+_ARQ_SUBESTACOES = _REDE_DIR / "subestacoes_rn.csv"
+_ARQ_LINHAS = _REDE_DIR / "linhas_transmissao_rn.csv"
 
 # Paleta de tensão — pedido do usuário (áudio 2026-08-22).
 _COR_POR_TENSAO = {
@@ -79,75 +76,37 @@ def _chave_subestacao_ons(nome: str) -> str:
     return " ".join(partes)
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner="Baixando subestações do ONS...")
-def baixar_subestacoes_rn() -> pd.DataFrame:
-    """Baixa o cadastro de subestações do ONS e filtra o RN.
+def _tensoes_para_lista(valor: object) -> list[int]:
+    """Converte a coluna ``tensoes_kv`` do CSV ('138;230') para ``[138, 230]``."""
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return []
+    return [int(float(v)) for v in str(valor).split(";") if str(v).strip()]
 
-    Retorna uma linha por subestação (agregada sobre os níveis de tensão),
-    com a coluna ``tensao_max_kv`` e a lista ``tensoes_kv``.
+
+def ler_subestacoes_rn() -> pd.DataFrame:
+    """Lê ``data/rede/subestacoes_rn.csv`` — uma linha por subestação de
+    transmissão do RN, com ``tensao_max_kv`` e ``tensoes_kv`` (lista de int).
+
+    O arquivo é gerado por ``scripts/atualizar_dados_mapa.py`` a partir do
+    cadastro de subestações do ONS; aqui só é lido e tipado.
     """
-    resposta = requests.get(_URL_SUBESTACOES, timeout=60)
-    resposta.raise_for_status()
-    df = pd.read_csv(pd.io.common.BytesIO(resposta.content), sep=";", decimal=".")
-    df = df[df["id_estado"] == "RN"].copy()
-    df["val_niveltensao"] = pd.to_numeric(df["val_niveltensao"], errors="coerce")
-    df["chave_subestacao"] = df["nom_subestacao"].apply(_chave_subestacao_ons)
-
-    agregado = (
-        df.groupby("chave_subestacao")
-        .agg(
-            nom_subestacao=("nom_subestacao", "first"),
-            agente_principal=("nom_agente_principal", "first"),
-            latitude=("val_latitude", "first"),
-            longitude=("val_longitude", "first"),
-            tensao_max_kv=("val_niveltensao", "max"),
-            tensoes_kv=("val_niveltensao", lambda s: sorted({int(v) for v in s.dropna()})),
-        )
-        .reset_index()
-    )
-    # Mantém apenas as subestações da rede de transmissão. As coletoras dos
-    # próprios conjuntos eólicos (agente = SPE da usina, ex.: SE JERUSALEM,
-    # SE RIO DO VENTO) duplicariam o marcador do conjunto no mapa.
-    manter = agregado["agente_principal"].apply(_e_transmissora) | agregado[
-        "chave_subestacao"
-    ].isin(_CHAVES_SEMPRE_MANTIDAS)
-    agregado = agregado[manter].copy()
-    agregado["nome_exibicao"] = agregado["nom_subestacao"].apply(nome_exibicao_subestacao)
-    return agregado.reset_index(drop=True)
+    df = pd.read_csv(_ARQ_SUBESTACOES)
+    df["tensoes_kv"] = df["tensoes_kv"].apply(_tensoes_para_lista)
+    df["tensao_max_kv"] = pd.to_numeric(df["tensao_max_kv"], errors="coerce")
+    return df.reset_index(drop=True)
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner="Baixando linhas de transmissão do ONS...")
-def baixar_linhas_rn() -> pd.DataFrame:
-    """Baixa o cadastro de linhas de transmissão do ONS e filtra as que tocam
-    o RN em qualquer terminal, mantendo só as ativas (sem data de desativação).
+def ler_linhas_rn() -> pd.DataFrame:
+    """Lê ``data/rede/linhas_transmissao_rn.csv`` — linhas da Rede de Operação
+    que tocam o RN (sem geometria — só subestação de/para), com tensão (kV),
+    tipo de rede, comprimento (km) e agente proprietário.
 
-    Sem geometria: cada linha tem apenas ``subestacao_de`` / ``subestacao_para``
-    (nomes), tensão (kV), tipo de rede e comprimento (km).
+    O arquivo é gerado por ``scripts/atualizar_dados_mapa.py``.
     """
-    resposta = requests.get(_URL_LINHAS, timeout=60)
-    resposta.raise_for_status()
-    df = pd.read_csv(pd.io.common.BytesIO(resposta.content), sep=";", decimal=".")
-
-    toca_rn = (df["nom_estado_de"] == _NOME_ESTADO_RN) | (
-        df["nom_estado_para"] == _NOME_ESTADO_RN
-    )
-    ativa = df["dat_desativacao"].isna() | (df["dat_desativacao"].astype(str).str.strip() == "")
-    df = df[toca_rn & ativa].copy()
-
-    df["subestacao_de"] = df["nom_subestacao_de"].str.strip()
-    df["subestacao_para"] = df["nom_subestacao_para"].str.strip()
-    df["chave_de"] = df["subestacao_de"].apply(_chave_subestacao_ons)
-    df["chave_para"] = df["subestacao_para"].apply(_chave_subestacao_ons)
-    df["tensao_kv"] = pd.to_numeric(df["val_niveltensao_kv"], errors="coerce")
-    df["tipo_rede"] = df["nom_tipoderede"].str.strip().str.title()
-    df["comprimento_km"] = pd.to_numeric(df["val_comprimento"], errors="coerce")
-    df["agente"] = df["nom_agenteproprietario"].str.strip()
-
-    colunas = [
-        "subestacao_de", "subestacao_para", "chave_de", "chave_para",
-        "tensao_kv", "tipo_rede", "comprimento_km", "agente",
-    ]
-    return df[colunas].drop_duplicates().reset_index(drop=True)
+    df = pd.read_csv(_ARQ_LINHAS)
+    df["tensao_kv"] = pd.to_numeric(df["tensao_kv"], errors="coerce")
+    df["comprimento_km"] = pd.to_numeric(df["comprimento_km"], errors="coerce")
+    return df.reset_index(drop=True)
 
 
 # --- Classificação e nomenclatura das subestações --------------------------
