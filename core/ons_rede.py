@@ -146,7 +146,10 @@ _TRANSMISSORAS = (
 
 # Subestações que estão em bays.xlsx (curadoria do cliente) e devem ser
 # mantidas mesmo que o agente principal do ONS não bata com _TRANSMISSORAS.
-_CHAVES_SEMPRE_MANTIDAS = {"CURRAIS NOVOS 2", "SANTA LUZIA 2"}
+# RIACHAO 2 e SANTA LUZIA 2 ficam na Paraíba, mas são ponto de conexão de
+# conjuntos do RN (Umari em Riachão II; Oeste Seridó / Serra do Tigre em
+# Santa Luzia II) — precisam sobreviver ao filtro id_estado == "RN".
+_CHAVES_SEMPRE_MANTIDAS = {"CURRAIS NOVOS 2", "SANTA LUZIA 2", "RIACHAO 2"}
 
 
 def _e_transmissora(agente) -> bool:

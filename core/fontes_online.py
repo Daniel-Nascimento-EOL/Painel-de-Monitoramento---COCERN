@@ -56,9 +56,16 @@ def baixar_subestacoes_rn() -> pd.DataFrame:
     resposta = requests.get(_URL_SUBESTACOES, timeout=60)
     resposta.raise_for_status()
     df = pd.read_csv(pd.io.common.BytesIO(resposta.content), sep=";", decimal=".")
-    df = df[df["id_estado"] == "RN"].copy()
-    df["val_niveltensao"] = pd.to_numeric(df["val_niveltensao"], errors="coerce")
     df["chave_subestacao"] = df["nom_subestacao"].apply(_chave_subestacao_ons)
+    # Mantém o RN e, além dele, as SE de outros estados que são ponto de
+    # conexão de conjuntos do RN (Riachão II e Santa Luzia II, na PB) — sem
+    # elas o cadastro fica sem a tensão e o agente dessas subestações, que
+    # aparecem no mapa porque um conjunto do RN se liga a elas.
+    df = df[
+        (df["id_estado"] == "RN")
+        | df["chave_subestacao"].isin(_CHAVES_SEMPRE_MANTIDAS)
+    ].copy()
+    df["val_niveltensao"] = pd.to_numeric(df["val_niveltensao"], errors="coerce")
 
     agregado = (
         df.groupby("chave_subestacao")
