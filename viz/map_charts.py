@@ -66,7 +66,7 @@ _TAMANHO_ICONE_CONJUNTO = 14
 # Altura máxima do conteúdo da ficha do conjunto. Com as metodologias
 # secundárias recolhidas a ficha cabe inteira nesta altura; ao expandi-las, o
 # excedente rola dentro do balão em vez de sair da área do mapa (650 px).
-_ALTURA_MAXIMA_FICHA = 520
+_ALTURA_MAXIMA_FICHA = 400
 
 
 def _nome_subestacao(nome: str) -> str:
@@ -611,6 +611,13 @@ def build_map(
         max_lon=_BOUNDS_RN[1][1],
         zoom_control=True,
     )
+    # maxBoundsViscosity=1.0 (o padrão implícito do folium ao passar
+    # max_bounds) prende o mapa com força total nas bordas e, de quebra,
+    # impede o autoPan que abriria espaço para o popup do conjunto — que é
+    # alto e encostava no topo do mapa, cortando o cabeçalho da ficha. Com
+    # 0.5 a borda ainda "resiste" ao arraste do usuário, mas o autoPan do
+    # popup consegue deslocar o mapa o suficiente para o balão caber.
+    m.options["maxBoundsViscosity"] = 0.5
 
     folium.TileLayer(
         tiles=_cor("tiles"),
@@ -858,7 +865,17 @@ def build_map(
             location=[row["latitude"], row["longitude"]],
             icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _cor("conjuntos"), _TAMANHO_ICONE_CONJUNTO),
             tooltip=row["conjunto"],
-            popup=folium.Popup(popup_html, max_width=320),
+            popup=folium.Popup(
+                popup_html,
+                max_width=320,
+                # keepInView + autoPan mantêm o balão inteiro dentro do
+                # mapa; o padding evita que ele cole nas bordas / na barra
+                # de zoom. Depende do maxBoundsViscosity < 1 acima.
+                keepInView=True,
+                autoPan=True,
+                autoPanPaddingTopLeft=(50, 16),
+                autoPanPaddingBottomRight=(16, 16),
+            ),
             z_index_offset=1000,
         ).add_to(m)
 
