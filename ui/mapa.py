@@ -22,14 +22,35 @@ _ROTULO_CAMADA = {
 
 
 def _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_linhas, df_ses, camadas) -> None:
-    """Botão de gerar/baixar a imagem PNG do mapa com as camadas atuais.
+    """Controle discreto para gerar e baixar a imagem PNG do mapa.
 
     A geração é sob demanda (baixa tiles do Esri, ~2 s a frio) — só roda
     quando o usuário clica; o resultado fica em session_state para o
-    ``st.download_button`` seguinte."""
-    col_gerar, col_baixar = st.columns([1, 1])
-    with col_gerar:
-        if st.button("🖼️ Gerar imagem do mapa (PNG)", use_container_width=True):
+    ``st.download_button`` seguinte.
+
+    Ocupa uma coluna estreita à direita, alinhado ao canto do mapa, em vez
+    de dois botões de meia largura: é ação acessória, não deve competir
+    visualmente com o mapa.
+    """
+    # A imagem vale para os filtros/camadas de quando foi gerada; se algo
+    # mudar, descarta-se para o botão voltar a ser "Gerar imagem".
+    assinatura = (len(filtrado), len(usinas_filtradas), tuple(sorted(camadas.items())))
+    if st.session_state.get("_mapa_png_assinatura") != assinatura:
+        st.session_state.pop("_mapa_png", None)
+        st.session_state["_mapa_png_assinatura"] = assinatura
+
+    _, col = st.columns([3, 1])
+    with col:
+        png = st.session_state.get("_mapa_png")
+        if png:
+            st.download_button(
+                "Baixar imagem",
+                data=png,
+                file_name=f"mapa_conjuntos_rn_{date.today():%Y%m%d}.png",
+                mime="image/png",
+                use_container_width=True,
+            )
+        elif st.button("Gerar imagem", use_container_width=True):
             st.session_state["_mapa_png"] = gerar_png_mapa_cache(
                 df_para_key(filtrado),
                 df_para_key(usinas_filtradas),
@@ -41,20 +62,7 @@ def _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_l
                 largura=1600,
                 altura=1100,
             )
-    png = st.session_state.get("_mapa_png")
-    if png:
-        with col_baixar:
-            st.download_button(
-                "⬇️ Baixar PNG",
-                data=png,
-                file_name=f"mapa_conjuntos_rn_{date.today():%Y%m%d}.png",
-                mime="image/png",
-                use_container_width=True,
-            )
-        st.caption(
-            "Imagem gerada com as camadas marcadas em **Camadas do mapa**. "
-            "Reabra o gerador após mudar filtros ou camadas."
-        )
+            st.rerun()
 
 
 def _municipios_unicos(df) -> list[str]:

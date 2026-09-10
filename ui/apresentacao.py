@@ -63,11 +63,16 @@ def render() -> None:
     st.markdown(
         f"""
         <style>
-        /* Escurece a moldura do Streamlit apenas enquanto a capa está no ar. */
-        [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+        /* O fundo escuro vale SÓ enquanto a capa está no ar. O seletor é
+           ancorado em :has(.capa): quando o painel entra, a .capa deixa de
+           existir no DOM e a regra para de casar sozinha. Sem isso, o CSS
+           injetado ficava valendo depois de entrar e o painel — que é claro
+           por decisão de design — aparecia travado no escuro. */
+        body:has(.capa) [data-testid="stAppViewContainer"],
+        body:has(.capa) [data-testid="stHeader"] {{
             background: #0d131b;
         }}
-        [data-testid="stSidebar"] {{ display: none; }}
+        body:has(.capa) [data-testid="stSidebar"] {{ display: none; }}
         .capa {{
             background: {camada};
             background-size: cover;
@@ -108,6 +113,11 @@ def render() -> None:
             color: #8fa0b0;
             max-width: 34rem;
             margin: 0;
+        }}
+        /* Afasta do card o bloco que traz o botão de entrada (o elemento
+           logo após o markdown da capa), que sem isto encosta na borda. */
+        body:has(.capa) div[data-testid="stHorizontalBlock"] {{
+            margin-top: 1.6rem;
         }}
         @media (max-width: 640px) {{
             .capa {{ padding: 2.6rem 1.5rem; min-height: 20rem; }}

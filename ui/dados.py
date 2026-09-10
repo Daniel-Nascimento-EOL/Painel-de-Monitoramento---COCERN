@@ -1,4 +1,11 @@
-"""Página de inspeção e exportação dos dados que alimentam o mapa.
+"""Inspeção e exportação dos dados que alimentam o mapa.
+
+**Fora da navegação do painel.** A página "Dados do mapa" foi retirada da
+barra lateral a pedido do usuário; ``render()`` não é mais chamada por
+``app.py``. O módulo permanece porque
+``scripts/gerar_geojson_auditoria.py`` importa ``_geojson_pontos`` e
+``_linhas_conexao`` para regenerar ``docs/pontos_mapa.geojson``. Ao mexer
+aqui, conferir esse script.
 
 Reúne num só lugar, **só para leitura**, todas as tabelas de origem do mapa
 — as cadastrais (conjuntos, usinas, subestações, cidades) e as de rede
