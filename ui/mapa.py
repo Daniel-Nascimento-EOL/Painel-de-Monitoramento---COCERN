@@ -5,6 +5,7 @@ import streamlit.components.v1 as components
 
 from datetime import date
 
+from core import tema
 from core.coff_cache import acumulado_do_ano
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
 from core.ons_rede import ler_linhas_rn, ler_subestacoes_rn
@@ -150,6 +151,7 @@ def render() -> None:
             df_acumulado.reset_index() if df_acumulado is not None else None
         ),
         rotulo_periodo=f" em {ano_acumulado}",
+        tema_escuro=tema.escuro(),
     )
     components.html(mapa_html, height=665, scrolling=False)
 

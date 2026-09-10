@@ -14,6 +14,7 @@ from datetime import date
 import plotly.express as px
 import streamlit as st
 
+from core import tema
 from core.ccee_pld import anexar_pld, baixar_pld_nordeste
 from core.data_loader import load_bays, load_conjuntos
 from core.ons_coff import (
@@ -198,7 +199,7 @@ def render() -> None:
         title="Energia frustrada por conjunto (top 20)",
     )
     fig_ranking.update_layout(yaxis={"categoryorder": "total ascending"}, height=550)
-    st.plotly_chart(fig_ranking, use_container_width=True)
+    st.plotly_chart(tema.aplicar_plotly(fig_ranking), use_container_width=True)
 
     serie_diaria = (
         df_calc.assign(dia=df_calc["din_instante"].dt.date).groupby("dia")[coluna_ef].sum().reset_index()
@@ -208,7 +209,7 @@ def render() -> None:
         labels={coluna_ef: "Energia frustrada (MWh)", "dia": ""},
         title="Energia frustrada por dia",
     )
-    st.plotly_chart(fig_serie, use_container_width=True)
+    st.plotly_chart(tema.aplicar_plotly(fig_serie), use_container_width=True)
 
     _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
 

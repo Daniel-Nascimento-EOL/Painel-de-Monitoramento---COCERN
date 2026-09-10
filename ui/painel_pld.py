@@ -15,6 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core import tema
 from core.ccee_pld import baixar_pld_nordeste
 
 _SLATE = "#3b5166"
@@ -237,7 +238,7 @@ def render() -> None:
     c3.metric("Mínima do dia", f"R$ {_reais(minima)}", delta=f"às {hora_min:02d}h", delta_color="off")
     c4.metric("Média do dia", f"R$ {_reais(media)}")
 
-    st.plotly_chart(_grafico_dia(dia, hora_ref), use_container_width=True)
+    st.plotly_chart(tema.aplicar_plotly(_grafico_dia(dia, hora_ref)), use_container_width=True)
 
     st.divider()
     st.markdown("#### Evolução recente")
@@ -247,7 +248,7 @@ def render() -> None:
         format_func=lambda d: f"{d} dias",
         label_visibility="collapsed",
     )
-    st.plotly_chart(_grafico_historico(serie, janela), use_container_width=True)
+    st.plotly_chart(tema.aplicar_plotly(_grafico_historico(serie, janela)), use_container_width=True)
     st.caption(
         "Linha: média diária do PLD horário. Faixa: mínima e máxima do dia. "
         "O piso e o teto do PLD são fixados anualmente pela ANEEL."

@@ -15,6 +15,7 @@ from shapely.geometry import shape
 from core.agentes import classe_css_logos, classe_logo, separar_agentes
 from core.documentos_ons import documentos_do_conjunto
 from core.ons_coff import METODOLOGIA_PADRAO, METODOLOGIAS
+from core.tema import cor_tensao_tema, paleta as paleta_tema
 from core.ons_rede import (
     agentes_subestacao,
     cor_tensao,
@@ -49,12 +50,12 @@ CENTRO_RN = (-5.6, -36.4)
 # Bbox real do RN (data/rn_estado.geojson) + margem mínima — pan quase travado no estado.
 _BOUNDS_RN = [[-7.10, -38.72], [-4.70, -34.83]]
 
-_COR_CONJUNTOS = "#3b5166"
-_COR_USINAS = "#c17a4f"
-_COR_SUBESTACAO = "#5b6b74"
-_COR_CONTORNO = "#9aa5b1"
-_COR_CIDADE = "#8a8f98"
-_COR_LINHA_CONEXAO = "#9aa5b1"
+# As cores do mapa vêm do tema corrente (core/tema.py), não de constantes
+# literais: o alternador claro/escuro da barra lateral troca a paleta inteira,
+# incluindo o basemap. Estas funções são chamadas onde antes estavam as
+# constantes ``_COR_*``; o custo é uma leitura de dicionário por chamada.
+def _cor(nome: str) -> str:
+    return paleta_tema()[nome]
 
 # Ícone do marcador de conjunto — tamanho fixo (sem proporcionalidade à qtd. de
 # usinas). Reduzido 40% (24 -> 14 px) a pedido do usuário: no tamanho anterior os
@@ -271,7 +272,7 @@ def _icone_turbina(cor: str, tamanho: int) -> folium.DivIcon:
 
 def _rotulo_cidade(nome: str) -> folium.DivIcon:
     html = (
-        f'<div class="rotulo-cidade" style="font-size:11px; font-style:italic; color:{_COR_CIDADE}; '
+        f'<div class="rotulo-cidade" style="font-size:11px; font-style:italic; color:{_cor("cidade")}; '
         f'white-space:nowrap; transform:translateX(-50%); '
         f'text-shadow:0 1px 2px rgba(255,255,255,0.9), 0 -1px 2px rgba(255,255,255,0.9);">'
         f"{nome}</div>"
@@ -311,7 +312,7 @@ def _avatar_agente(nome: str, cor_avatar: str) -> str:
     if classe:
         return (
             '<div style="width:34px; height:34px; flex-shrink:0; border-radius:8px; '
-            'background:#f4f5f7; display:flex; align-items:center; justify-content:center; '
+            'background:{_cor("fundo_ficha")}; display:flex; align-items:center; justify-content:center; '
             'overflow:hidden;">'
             f'<div class="logo-agente {classe}"></div>'
             "</div>"
@@ -339,14 +340,14 @@ def _bloco_agentes(rotulo: str, valor, cor_avatar: str) -> str:
     linhas = "".join(
         '<div style="display:flex; align-items:center; gap:9px; margin-bottom:6px;">'
         f"{_avatar_agente(nome, cor_avatar)}"
-        f'<div style="font-size:12.5px; color:#2a3542; font-weight:500; line-height:1.3;">'
+        f'<div style="font-size:12.5px; color:{_cor("titulo_ficha")}; font-weight:500; line-height:1.3;">'
         f'{nome or "—"}</div></div>'
         for nome in agentes
     )
     return (
         '<div style="margin-bottom:8px;">'
         f'<div style="font-family:{_FONTE_TEXTO}; font-size:10px; text-transform:uppercase; '
-        f'letter-spacing:.04em; color:#9aa5b1; margin-bottom:5px;">{rotulo_final}</div>'
+        f'letter-spacing:.04em; color:{_cor("rotulo_ficha")}; margin-bottom:5px;">{rotulo_final}</div>'
         f"{linhas}</div>"
     )
 
@@ -371,13 +372,13 @@ def _ficha_subestacao_html(nome_se: str, tensao_txt: str, agente_operador) -> st
     proprietario, operador = agentes_subestacao(nome_se)
     if proprietario is None and operador is None:
         operador = agente_operador
-    blocos = _bloco_agentes("Agente Proprietário", proprietario, _COR_SUBESTACAO)
-    blocos += _bloco_agentes("Agente Operador", operador, _COR_SUBESTACAO)
+    blocos = _bloco_agentes("Agente Proprietário", proprietario, _cor("subestacao"))
+    blocos += _bloco_agentes("Agente Operador", operador, _cor("subestacao"))
     return (
-        f'<div style="font-family:{_FONTE_TEXTO}; color:#3a444e; min-width:210px;">'
-        f'<div style="font-size:14px; font-weight:600; color:#2a3542; '
+        f'<div style="font-family:{_FONTE_TEXTO}; color:{_cor("texto_ficha")}; min-width:210px;">'
+        f'<div style="font-size:14px; font-weight:600; color:{_cor("titulo_ficha")}; '
         f'margin-bottom:2px;">{nome_se}</div>'
-        f'<div style="font-size:11.5px; color:#6b7580; margin-bottom:9px;">'
+        f'<div style="font-size:11.5px; color:{_cor("rotulo_ficha")}; margin-bottom:9px;">'
         f'{tensao_txt or "tensão não cadastrada (ONS)"}</div>'
         f"{blocos}</div>"
     )
@@ -389,8 +390,8 @@ def _linha_ficha(rotulo: str, valor: str) -> str:
     return (
         '<div style="margin-bottom:7px;">'
         f'<div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; '
-        f'color:#9aa5b1; margin-bottom:2px;">{rotulo}</div>'
-        f'<div style="font-size:12.5px; color:#2a3542; font-weight:500; '
+        f'color:{_cor("rotulo_ficha")}; margin-bottom:2px;">{rotulo}</div>'
+        f'<div style="font-size:12.5px; color:{_cor("titulo_ficha")}; font-weight:500; '
         f'line-height:1.3;">{valor}</div></div>'
     )
 
@@ -406,7 +407,7 @@ def _ficha_linha_transmissao_html(ln) -> str:
     de = nome_exibicao_subestacao(ln["subestacao_de"])
     para = nome_exibicao_subestacao(ln["subestacao_para"])
     tensao = ln["tensao_kv"]
-    cor = cor_tensao(tensao)
+    cor = cor_tensao_tema(tensao, cor_tensao(tensao))
     comprimento = ln.get("comprimento_km")
     comp_txt = f"{_numero_br(comprimento, 1)} km" if pd.notna(comprimento) else "—"
     corpo = _linha_ficha("Nível de tensão", f"{tensao:.0f} kV")
@@ -417,11 +418,11 @@ def _ficha_linha_transmissao_html(ln) -> str:
     )
     corpo += _linha_ficha("Rede", tipo_rede)
     corpo += _bloco_agentes(
-        "Agente", marca_agente_linha(ln.get("agente")), _COR_SUBESTACAO
+        "Agente", marca_agente_linha(ln.get("agente")), _cor("subestacao")
     )
     return (
-        f'<div style="font-family:{_FONTE_TEXTO}; color:#3a444e; min-width:210px;">'
-        f'<div style="font-size:14px; font-weight:600; color:#2a3542; '
+        f'<div style="font-family:{_FONTE_TEXTO}; color:{_cor("texto_ficha")}; min-width:210px;">'
+        f'<div style="font-size:14px; font-weight:600; color:{_cor("titulo_ficha")}; '
         f'margin-bottom:3px;">{de} — {para}</div>'
         f'<div style="height:3px; width:38px; background:{cor}; '
         f'margin-bottom:9px;"></div>'
@@ -436,14 +437,14 @@ def _ficha_linha_conexao_html(conjunto: str, nome_se: str, tensao) -> str:
     conexão, desenhada tracejada. O cadastro do ONS não traz extensão nem
     agente para ela, então a ficha fica no essencial.
     """
-    cor = cor_tensao(tensao)
+    cor = cor_tensao_tema(tensao, cor_tensao(tensao))
     corpo = _linha_ficha("Conjunto", conjunto)
     corpo += _linha_ficha("Ponto de conexão", nome_se)
     if tensao is not None and pd.notna(tensao):
         corpo += _linha_ficha("Nível de tensão", f"{int(tensao)} kV")
     return (
-        f'<div style="font-family:{_FONTE_TEXTO}; color:#3a444e; min-width:200px;">'
-        f'<div style="font-size:14px; font-weight:600; color:#2a3542; '
+        f'<div style="font-family:{_FONTE_TEXTO}; color:{_cor("texto_ficha")}; min-width:200px;">'
+        f'<div style="font-size:14px; font-weight:600; color:{_cor("titulo_ficha")}; '
         f'margin-bottom:3px;">Conexão do conjunto</div>'
         f'<div style="height:0; width:38px; border-top:3px dashed {cor}; '
         f'margin-bottom:9px;"></div>'
@@ -461,7 +462,7 @@ def _numero_br(valor: float, casas: int = 2) -> str:
 def _secao_titulo(texto: str) -> str:
     return (
         f'<div style="font-family:{_FONTE_TEXTO}; font-size:10px; text-transform:uppercase; '
-        f'letter-spacing:.04em; color:#9aa5b1; margin:9px 0 5px;">{texto}</div>'
+        f'letter-spacing:.04em; color:{_cor("rotulo_ficha")}; margin:9px 0 5px;">{texto}</div>'
     )
 
 
@@ -488,7 +489,11 @@ def _bloco_metodologias(
         else:
             numero = _numero_br(float(valor), casas)
             texto = f"{unidade} {numero}" if moeda else f"{numero} {unidade}"
-        estilo = "font-weight:600; color:#2a3542;" if destacada else "color:#5b6570;"
+        estilo = (
+            f'font-weight:600; color:{_cor("titulo_ficha")};'
+            if destacada
+            else f'color:{_cor("texto_ficha")};'
+        )
         rotulo = f"Metodologia [{n}]" + (" · referência" if destacada else "")
         return (
             '<div style="display:flex; justify-content:space-between; gap:10px; '
@@ -541,10 +546,10 @@ def _legenda_tensao_html() -> str:
         f'<span style="width:16px;height:3px;background:{cor};display:inline-block;"></span>'
         f'<span>{rotulo}</span></div>'
         for rotulo, cor in [
-            ("69 kV", cor_tensao(69)),
-            ("138 kV", cor_tensao(138)),
-            ("230 kV", cor_tensao(230)),
-            ("500 kV", cor_tensao(500)),
+            ("69 kV", cor_tensao_tema(69, cor_tensao_tema(69, cor_tensao(69)))),
+            ("138 kV", cor_tensao_tema(138, cor_tensao_tema(138, cor_tensao(138)))),
+            ("230 kV", cor_tensao_tema(230, cor_tensao_tema(230, cor_tensao(230)))),
+            ("500 kV", cor_tensao_tema(500, cor_tensao_tema(500, cor_tensao(500)))),
         ]
     )
     # Traçado: contínuo para linha de transmissão entre subestações, tracejado
@@ -560,8 +565,8 @@ def _legenda_tensao_html() -> str:
     )
     return (
         '<div style="position:fixed;bottom:22px;left:12px;z-index:9999;'
-        f'background:rgba(255,255,255,0.92);border:1px solid #d7dbe0;border-radius:6px;'
-        f'padding:8px 10px;font-family:{_FONTE_TEXTO};font-size:11px;color:#4a545e;'
+        f'background:{_cor("fundo_legenda")};border:1px solid {_cor("borda_legenda")};border-radius:6px;'
+        f'padding:8px 10px;font-family:{_FONTE_TEXTO};font-size:11px;color:{_cor("texto_ficha")};'
         'box-shadow:0 1px 4px rgba(0,0,0,0.12);">'
         '<div style="font-weight:600;margin-bottom:4px;">Nível de tensão</div>'
         f"{itens}"
@@ -603,7 +608,7 @@ def build_map(
     )
 
     folium.TileLayer(
-        tiles=ESRI_TILES_URL,
+        tiles=_cor("tiles"),
         attr=ESRI_TILES_ATTR,
         name="Mapa base (Esri)",
         control=False,
@@ -614,7 +619,9 @@ def build_map(
     _mascara = folium.GeoJson(
         _mascara_fora_rn(contorno),
         style_function=lambda _: {
-            "fillColor": "#ffffff",
+            # Segue o tema: branco no claro, quase-preto no escuro. Fixa em
+            # branco, a máscara acendia toda a volta do estado no tema escuro.
+            "fillColor": _cor("mascara"),
             "color": "transparent",
             "fillOpacity": 1,
         },
@@ -642,7 +649,7 @@ def build_map(
         control=False,
         style_function=lambda _: {
             "fillColor": "transparent",
-            "color": _COR_CONTORNO,
+            "color": _cor("contorno"),
             "weight": 1.5,
             "fillOpacity": 0,
         },
@@ -656,9 +663,9 @@ def build_map(
             folium.CircleMarker(
                 location=[row["latitude"], row["longitude"]],
                 radius=2.5,
-                color=_COR_CIDADE,
+                color=_cor("cidade"),
                 fill=True,
-                fill_color=_COR_CIDADE,
+                fill_color=_cor("cidade"),
                 fill_opacity=0.8,
                 weight=0,
             ).add_to(m)
@@ -725,7 +732,7 @@ def build_map(
             )
             folium.PolyLine(
                 locations=[a, b],
-                color=cor_tensao(ln["tensao_kv"]),
+                color=cor_tensao_tema(ln["tensao_kv"], cor_tensao(ln["tensao_kv"])),
                 weight=2.2,
                 opacity=0.75,
                 tooltip=nome_linha,
@@ -742,7 +749,7 @@ def build_map(
             nome_destino = destino.get("nome", "—")
             folium.PolyLine(
                 locations=[[row["latitude"], row["longitude"]], destino["pos"]],
-                color=cor_tensao(destino["tensao_max_kv"]),
+                color=cor_tensao_tema(destino["tensao_max_kv"], cor_tensao(destino["tensao_max_kv"])),
                 weight=1.6,
                 opacity=0.55,
                 dash_array="4,5",
@@ -765,7 +772,7 @@ def build_map(
             )
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
-                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
+                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _cor("subestacao"), 26),
                 tooltip=f'{nome_se} · {tensao_txt or "—"}',
                 popup=folium.Popup(popup_html, max_width=280),
                 z_index_offset=1000,
@@ -786,7 +793,7 @@ def build_map(
             )
             folium.Marker(
                 location=[se["latitude"], se["longitude"]],
-                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _COR_SUBESTACAO, 26),
+                icon=_icone_customizado(ICONS_DIR / "logo_se.png", _cor("subestacao"), 26),
                 tooltip=f'{nome_se} · {tensao_txt or "—"}',
                 popup=folium.Popup(popup_html, max_width=280),
                 z_index_offset=1000,
@@ -800,15 +807,15 @@ def build_map(
             '<div class="ficha-conjunto">'
             f"<div style=\"font-family: Georgia, 'Times New Roman', serif; font-size:15px; "
             f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
-            f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:#5b6570; '
+            f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:{_cor("texto_ficha")}; '
             'line-height:1.55; margin-bottom:4px;">'
             f'{row["municipios"]}'
             "</div>"
             '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
-            + _bloco_agentes("Agente Proprietário", row["agente_proprietario"], _COR_CONJUNTOS)
-            + _bloco_agentes("Agente Operador", row["agente_operador"], _COR_SUBESTACAO)
+            + _bloco_agentes("Agente Proprietário", row["agente_proprietario"], _cor("conjuntos"))
+            + _bloco_agentes("Agente Operador", row["agente_operador"], _cor("subestacao"))
             + '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
-            + f'<div style="font-family:{_FONTE_TEXTO}; font-size:11.5px; color:#5b6570; '
+            + f'<div style="font-family:{_FONTE_TEXTO}; font-size:11.5px; color:{_cor("texto_ficha")}; '
             'line-height:1.7;">'
             f'Capacidade instalada: <b>{_numero_br(row["capacidade_mw"])} MW</b><br>'
             f'Aerogeradores: <b>{row["qtd_aerogeradores"]}</b><br>'
@@ -828,7 +835,7 @@ def build_map(
         )
         folium.Marker(
             location=[row["latitude"], row["longitude"]],
-            icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _COR_CONJUNTOS, _TAMANHO_ICONE_CONJUNTO),
+            icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _cor("conjuntos"), _TAMANHO_ICONE_CONJUNTO),
             tooltip=row["conjunto"],
             popup=folium.Popup(popup_html, max_width=320),
             z_index_offset=1000,
@@ -841,7 +848,7 @@ def build_map(
                 pot = row.get("potencia_outorgada_mw")
             pot_txt = f"{pot:.1f} MW" if pd.notna(pot) else "potência não localizada (SIGA)"
             popup_html = (
-                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:#3a444e;">'
+                f'<div style="font-family:{_FONTE_TEXTO};font-size:12px;color:{_cor("texto_ficha")};">'
                 f"<b>{row['usina']}</b><br>"
                 f"Conjunto: {row['conjunto']}<br>"
                 f"Potência: {pot_txt}<br>"
@@ -850,7 +857,7 @@ def build_map(
             )
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
-                icon=_icone_turbina(_COR_USINAS, 15),
+                icon=_icone_turbina(_cor("usinas"), 15),
                 tooltip=f"{row['usina']} · {pot_txt}",
                 popup=folium.Popup(popup_html, max_width=280),
             ).add_to(m)
@@ -905,9 +912,14 @@ def build_map_html(
     altura: int = 650,
     acumulado_json: str = "",
     rotulo_periodo: str = "",
+    tema_escuro: bool = False,
 ) -> str:
     """Versão cacheável de ``build_map``: recebe DataFrames serializados como
     JSON (chaves estáveis) e devolve o HTML do mapa já renderizado.
+
+    ``tema_escuro`` entra só para compor a chave do cache: o HTML embute as
+    cores do tema, então sem esse parâmetro alternar claro/escuro devolveria
+    o mapa pintado com a paleta anterior.
 
     Streamlit reroda ``render()`` inteira a cada clique de filtro/camada; sem
     este cache o folium.Map (54 conjuntos + subestações + linhas + máscara +

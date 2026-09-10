@@ -1,5 +1,6 @@
 import streamlit as st
 
+from core import tema
 from ui import apresentacao, energia_frustrada, mapa, painel_pld
 
 st.set_page_config(
@@ -71,6 +72,14 @@ pagina = st.sidebar.radio(
 if st.sidebar.button("Tela inicial", use_container_width=True):
     apresentacao.voltar()
     st.rerun()
+
+# Alternador de tema. O CSS é injetado depois do _CSS global para poder
+# sobrepor as cores do config.toml (que o Streamlit não troca em runtime).
+tema.alternar(
+    st.sidebar.toggle("Tema escuro", value=tema.escuro(), key="alternador_tema")
+)
+st.markdown(tema.css(), unsafe_allow_html=True)
+
 st.sidebar.divider()
 
 if pagina == "Mapa":

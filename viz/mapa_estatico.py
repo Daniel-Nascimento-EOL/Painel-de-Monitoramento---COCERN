@@ -18,18 +18,25 @@ from PIL import Image, ImageDraw, ImageFont
 from staticmap import CircleMarker, IconMarker, Line, StaticMap
 
 from core.ons_rede import _COR_POR_TENSAO, _COR_TENSAO_OUTRA, cor_tensao
+from core.tema import _PALETA
 from viz.map_charts import (
     ESRI_TILES_ATTR,
     ESRI_TILES_URL,
     ICONS_DIR,
-    _COR_CIDADE,
-    _COR_CONJUNTOS,
-    _COR_CONTORNO,
-    _COR_SUBESTACAO,
-    _COR_USINAS,
     _carregar_contorno_rn,
     _tingir_icone_array,
 )
+
+# O PNG exportado usa **sempre a paleta clara**, independentemente do tema
+# em que o painel está: ele vai para o relatório e para impressão, onde
+# fundo escuro gasta tinta e piora a leitura. Por isso lê _PALETA[False]
+# diretamente, em vez de tema.paleta(), que segue a escolha da sessão.
+_CLARO = _PALETA[False]
+_COR_CIDADE = _CLARO["cidade"]
+_COR_CONJUNTOS = _CLARO["conjuntos"]
+_COR_CONTORNO = _CLARO["contorno"]
+_COR_SUBESTACAO = _CLARO["subestacao"]
+_COR_USINAS = _CLARO["usinas"]
 
 # Camadas aceitas em `camadas` — mesmas chaves de viz/map_charts.CAMADAS_PADRAO,
 # mas só estas têm efeito no PNG (rótulos de cidade e máscara do RN são
