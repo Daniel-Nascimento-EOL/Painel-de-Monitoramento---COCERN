@@ -119,10 +119,11 @@ def _tensao_max(tensoes) -> float | None:
 def _desenhar_legenda(img: Image.Image) -> Image.Image:
     """Caixa de legenda de nível de tensão no canto inferior esquerdo."""
     linhas = [
+        ("69 kV", _COR_POR_TENSAO.get(69, _COR_TENSAO_OUTRA)),
         ("138 kV", _COR_POR_TENSAO.get(138, _COR_TENSAO_OUTRA)),
         ("230 kV", _COR_POR_TENSAO.get(230, _COR_TENSAO_OUTRA)),
         ("500 kV", _COR_POR_TENSAO.get(500, _COR_TENSAO_OUTRA)),
-        ("69 kV / outra", _COR_TENSAO_OUTRA),
+        ("sem dado", _COR_TENSAO_OUTRA),
     ]
     try:
         fonte = ImageFont.truetype("arial.ttf", 15)
@@ -214,9 +215,11 @@ def gerar_png_mapa(
         for _, r in df_conjuntos.iterrows():
             destino = bays.get(r["chave_subestacao"])
             if destino:
+                tensao = r.get("tensao_conexao_kv")
+                cor = cor_tensao(tensao) if pd.notna(tensao) else _COR_TENSAO_OUTRA
                 m.add_line(Line(
                     [(r["longitude"], r["latitude"]), destino["pos"]],
-                    cor_tensao(destino["tensao_max_kv"]),
+                    cor,
                     2,
                 ))
 

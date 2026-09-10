@@ -21,6 +21,7 @@ _COLUNAS_CONJUNTOS = {
     "Qtd. usinas": "qtd_usinas",
     "Qtde. aerogeradores": "qtd_aerogeradores",
     "Ponto de conexão": "ponto_conexao",
+    "Tensão de linha (kV)": "tensao_conexao_kv",
     "Agente Proprietário": "agente_proprietario",
     "Agente Operador": "agente_operador",
     "Ajustamento Operativo": "ajustamento_operativo",

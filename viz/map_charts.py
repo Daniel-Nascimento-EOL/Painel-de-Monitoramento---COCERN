@@ -437,10 +437,15 @@ def _ficha_linha_conexao_html(conjunto: str, nome_se: str, tensao) -> str:
     conexão, desenhada tracejada. O cadastro do ONS não traz extensão nem
     agente para ela, então a ficha fica no essencial.
     """
-    cor = cor_tensao_tema(tensao, cor_tensao(tensao))
+    tem_tensao = tensao is not None and pd.notna(tensao)
+    cor = (
+        cor_tensao_tema(tensao, cor_tensao(tensao))
+        if tem_tensao
+        else _cor("linha_conexao")
+    )
     corpo = _linha_ficha("Conjunto", conjunto)
     corpo += _linha_ficha("Ponto de conexão", nome_se)
-    if tensao is not None and pd.notna(tensao):
+    if tem_tensao:
         corpo += _linha_ficha("Nível de tensão", f"{int(tensao)} kV")
     return (
         f'<div style="font-family:{_FONTE_TEXTO}; color:{_cor("texto_ficha")}; min-width:200px;">'
@@ -739,24 +744,35 @@ def build_map(
                 popup=folium.Popup(_ficha_linha_transmissao_html(ln), max_width=280),
             ).add_to(m)
 
-    # Linhas de conexão conjunto -> subestação — coloridas pela tensão máxima
-    # da subestação de conexão (fallback cinza quando a tensão é desconhecida).
+    # Linhas de conexão conjunto -> subestação — coloridas pela tensão da
+    # linha de conexão do conjunto (coluna "Tensão de linha (kV)" da planilha,
+    # curada a partir dos AO-CE do MPO). Fallback cinza neutro quando a
+    # planilha não traz a tensão. NÃO usar a tensão máxima da SE de destino:
+    # a maioria dos conjuntos entra em 69/138 numa SE cuja rede básica é
+    # 500 kV, e a cor saía vermelha (igual à linha de transmissão).
     if camadas["linhas_conexao"] and bays_por_chave:
         for _, row in df_conjuntos.iterrows():
             destino = bays_por_chave.get(row["chave_subestacao"])
             if destino is None:
                 continue
             nome_destino = destino.get("nome", "—")
+            tensao = row.get("tensao_conexao_kv")
+            tem_tensao = tensao is not None and pd.notna(tensao)
+            cor = (
+                cor_tensao_tema(tensao, cor_tensao(tensao))
+                if tem_tensao
+                else _cor("linha_conexao")
+            )
             folium.PolyLine(
                 locations=[[row["latitude"], row["longitude"]], destino["pos"]],
-                color=cor_tensao_tema(destino["tensao_max_kv"], cor_tensao(destino["tensao_max_kv"])),
+                color=cor,
                 weight=1.6,
-                opacity=0.55,
+                opacity=0.7 if tem_tensao else 0.55,
                 dash_array="4,5",
                 tooltip=f'{row["conjunto"]} — {nome_destino}',
                 popup=folium.Popup(
                     _ficha_linha_conexao_html(
-                        row["conjunto"], nome_destino, destino["tensao_max_kv"]
+                        row["conjunto"], nome_destino, tensao if tem_tensao else None
                     ),
                     max_width=260,
                 ),
@@ -820,7 +836,12 @@ def build_map(
             f'Capacidade instalada: <b>{_numero_br(row["capacidade_mw"])} MW</b><br>'
             f'Aerogeradores: <b>{row["qtd_aerogeradores"]}</b><br>'
             f'Ponto de conexão: <b>{_nome_subestacao(row["ponto_conexao"])}</b>'
-            "</div>"
+            + (
+                f'<br>Tensão de conexão: <b>{int(row["tensao_conexao_kv"])} kV</b>'
+                if pd.notna(row.get("tensao_conexao_kv"))
+                else ""
+            )
+            + "</div>"
             + _secao_titulo(f"Energia frustrada acumulada{rotulo_periodo}")
             + f'<div style="font-family:{_FONTE_TEXTO};">'
             + _bloco_metodologias(acumulado, "energia_frustrada_", "MWh", 2)

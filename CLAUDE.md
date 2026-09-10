@@ -106,8 +106,19 @@ docs/
   dataset de constrained-off do ONS), `Localização (lat, long)` (string
   combinada `"lat, long"`, parseada em `core/data_loader.py`), município(s),
   capacidade instalada (`"109,20 MW"` — parser tolera espaços soltos tipo
-  `"63 ,00MW"`), qtd. usinas/aerogeradores, ponto de conexão, agente
+  `"63 ,00MW"`), qtd. usinas/aerogeradores, ponto de conexão, **`Tensão de
+  linha (kV)`** (tensão da linha de conexão do conjunto — 69/138/230/500,
+  curada à mão a partir dos AO-CE; 49/54 preenchidos), agente
   proprietário/operador (+ URLs de logo), ajustamento operativo.
+
+  **Gotcha da tensão de conexão**: a linha conjunto→SE é colorida por essa
+  coluna, **não** pela tensão máxima da SE de destino. A maioria dos
+  conjuntos entra em 69/138 numa SE cuja rede básica é 500 kV (João Câmara
+  III, Açu III, Monte Verde…), então usar a tensão da SE pintava quase toda
+  conexão de vermelho (igual à linha de transmissão). Sem a coluna → cinza
+  neutro (`paleta["linha_conexao"]`). Não existe dataset aberto com essa
+  tensão: ONS COFF/subestações/linhas (≥230 kV), ANEEL SIGA e EPE não a
+  trazem — só os AO-CE do MPO (PDF).
 - **Detalhamento** (309 linhas): usina individual, **CEG**, lat/long,
   município (colunas separadas, ao contrário de Localizacao).
 - **Fontes e metodologia**: proveniência (ONS SINMAPS, ONS conjunto↔usina,
@@ -339,12 +350,14 @@ suporta símbolos customizados com estilo Mapbox GL pago/tokenizado.
   II`, `CARAUBAS II`) em `SE João Câmara III`, via `_NOME_EXIBICAO_SE`. A
   tensão saiu do nome e aparece só na ficha.
 - **Linhas de conexão** conjunto→subestação são desenhadas sempre (fixas,
-  não só ao clicar/selecionar), estilo neutro, sem diferenciação por nível
-  de tensão ainda (falta dado de kV por subestação — próxima melhoria).
+  não só ao clicar/selecionar), tracejadas, coloridas pela `Tensão de linha
+  (kV)` do conjunto (§2.1) na mesma paleta das linhas de transmissão; cinza
+  neutro nos 5 conjuntos sem essa tensão cadastrada.
 - **Ficha de detalhe do conjunto** (ordem definida pelo usuário): nome ·
   municípios · Agente(s) Proprietário(s) e Operador(es), **todos** com
   logomarca (§2.5) · capacidade instalada · qtd. aerogeradores · ponto de
-  conexão (`SE <nome>`) · **energia frustrada acumulada** nas 5
+  conexão (`SE <nome>`) · tensão de conexão (kV, quando cadastrada) ·
+  **energia frustrada acumulada** nas 5
   metodologias (MWh) · **impacto financeiro acumulado** nas 5 (R$) ·
   **documentos associados** com link (§4.5). Os acumulados vêm de
   `core/coff_cache.py` restritos aos meses consolidados — ver §4.4.

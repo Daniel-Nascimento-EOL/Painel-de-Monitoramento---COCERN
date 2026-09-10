@@ -41,6 +41,7 @@ da ficha de detalhe e dos filtros.
 | `Qtd. usinas` | inteiro | |
 | `Qtde. aerogeradores` | inteiro | |
 | `Ponto de conexão` | `"SE Açu II"` | tem de casar com a coluna `Subestação` de `bays.xlsx` (o prefixo `SE ` é ignorado na junção). É o que liga a linha de conexão conjunto→SE. |
+| `Tensão de linha (kV)` | inteiro (`69`, `138`, `230`, `500`) | tensão da linha de conexão do conjunto ao seu ponto de conexão. **É o que colore a linha conjunto→SE** (69 verde-limão, 138 preto, 230 azul, 500 vermelho). Curada à mão a partir dos AO-CE do MPO. Vazio → linha cinza neutro. Não confundir com a tensão máxima da SE de destino (a maioria dos conjuntos entra em 69/138 numa SE cuja rede básica é 500 kV). |
 | `Agente Proprietário` / `Agente Operador` | texto | co-propriedade separada por ` / ` (ex.: `Voltalia / Copel / Toda`). Cada nome puxa a logomarca de `data/icons/agentes/` (ver `core/agentes.py`). |
 | `Ajustamento Operativo` | `AO-CE.NE.2LE` | vira link para o PDF do MPO do ONS. |
 | `Logo - Agente *` | — | **colunas mortas.** Não são mais lidas. Ignorar. |
@@ -50,7 +51,8 @@ da ficha de detalhe e dos filtros.
 1. Acrescente uma linha na aba `Localizacao` preenchendo ao menos
    `Conjunto`, `id_ons`, `Localização (lat, long)`, `Município(s)`,
    `Capacidade instalada`, `Qtd. usinas`, `Qtde. aerogeradores`,
-   `Ponto de conexão`, `Agente Proprietário`, `Agente Operador`.
+   `Ponto de conexão`, `Tensão de linha (kV)`, `Agente Proprietário`,
+   `Agente Operador`.
 2. Se o ponto de conexão for uma subestação ainda não listada, adicione-a
    também em `bays.xlsx` (seção 3).
 3. Opcional: acrescente as usinas do conjunto na aba `Detalhamento`.
