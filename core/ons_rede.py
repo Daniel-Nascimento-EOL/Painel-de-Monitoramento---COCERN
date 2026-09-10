@@ -219,6 +219,10 @@ _AGENTES_SE = {
     "PARAISO": ("Axia Nordeste", "Axia Nordeste"),
     "SIMPLICE": ("Taesa", "Taesa"),
     "TOUROS": ("Axia Nordeste", "Axia Nordeste"),
+    # SE na Paraíba (id_estado == "PB"): não entram no cadastro do ONS
+    # filtrado por RN, só existem em bays.xlsx. O agente vem daqui.
+    "RIACHAO 2": ("Axia Nordeste", "Axia Nordeste"),
+    "SANTA LUZIA 2": ("Neoenergia", "Neoenergia"),
 }
 
 
