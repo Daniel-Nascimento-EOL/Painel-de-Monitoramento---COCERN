@@ -24,9 +24,7 @@ _COLUNAS_CONJUNTOS = {
     "Tensão de linha (kV)": "tensao_conexao_kv",
     "Agente Proprietário": "agente_proprietario",
     "Agente Operador": "agente_operador",
-    "Ajustamento Operativo": "ajustamento_operativo",
-    "Logo - Agente Proprietário": "logo_proprietario",
-    "Logo - Agente Operador": "logo_operador",
+    "Documentos associados": "documentos_associados",
 }
 
 _COLUNAS_USINAS = {
@@ -140,3 +138,13 @@ def load_cidades() -> pd.DataFrame:
     df = pd.read_excel(BAYS_PATH, sheet_name="Cidades_RN")
     df = df.rename(columns=_COLUNAS_CIDADES)
     return df
+
+
+def municipios_unicos(df: pd.DataFrame) -> list[str]:
+    """Municípios distintos entre os conjuntos de ``df`` (coluna 'municipios',
+    string com múltiplos municípios separados por ';')."""
+    todos = set()
+    for valor in df["municipios"].dropna():
+        for municipio in valor.split(";"):
+            todos.add(municipio.strip())
+    return sorted(todos)

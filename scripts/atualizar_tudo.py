@@ -16,6 +16,7 @@ Etapas (nesta ordem):
     coff   scripts/atualizar_cache_coff.py   -> data/cache_coff/*.parquet (só meses novos)
     pld    scripts/atualizar_pld_local.py    -> data/historico_pld_ne.csv (aborta se divergir)
     logos  scripts/baixar_logos_agentes.py   -> data/icons/agentes/
+    documentos scripts/atualizar_documentos_ons.py -> data/documentos_ons.novo.csv (não toca o vigente)
     geojson scripts/gerar_geojson_auditoria.py -> docs/pontos_mapa.geojson
 
 Cada etapa é isolada: se uma falhar, as demais ainda rodam e o script
