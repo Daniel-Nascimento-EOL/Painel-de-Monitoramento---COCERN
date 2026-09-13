@@ -16,6 +16,10 @@ from pathlib import Path
 
 import streamlit as st
 
+from core.agentes import separar_agentes
+from core.data_loader import load_conjuntos, municipios_unicos
+from core.formatos import numero_br
+
 _CAPA = Path(__file__).resolve().parent.parent / "data" / "icons" / "capa_rn.png"
 
 SIGLA = "COCERN"
@@ -49,6 +53,26 @@ def marcar_vista() -> None:
 def voltar() -> None:
     """Reexibe a tela de apresentação (botão 'Tela inicial' da barra lateral)."""
     st.session_state[_CHAVE_ENTRADA] = False
+
+
+def _metricas_painel() -> list[tuple[str, str]]:
+    """(valor formatado, rótulo) das 6 métricas gerais exibidas na capa."""
+    df = load_conjuntos()
+    proprietarios: set[str] = set()
+    for valor in df["agente_proprietario"].dropna():
+        proprietarios.update(separar_agentes(valor))
+    operadores: set[str] = set()
+    for valor in df["agente_operador"].dropna():
+        operadores.update(separar_agentes(valor))
+
+    return [
+        (f"{numero_br(df['capacidade_mw'].sum(), 0)} MW", "Capacidade instalada"),
+        (numero_br(int(df["qtd_usinas"].sum()), 0), "Usinas"),
+        (numero_br(int(df["qtd_aerogeradores"].sum()), 0), "Aerogeradores"),
+        (str(len(municipios_unicos(df))), "Municípios"),
+        (str(len(proprietarios)), "Agentes Proprietários"),
+        (str(len(operadores)), "Agentes Operadores"),
+    ]
 
 
 def render() -> None:
@@ -108,11 +132,24 @@ def render() -> None:
             max-width: 34rem;
             margin: 0 0 .9rem;
         }}
-        .capa .nota {{
-            font-size: .86rem;
+        .capa .metricas {{
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 1.4rem;
+            max-width: 44rem;
+            margin-top: 1.7rem;
+        }}
+        .capa .metrica .valor {{
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #f2f5f8;
+            line-height: 1.2;
+        }}
+        .capa .metrica .rotulo {{
+            font-size: .74rem;
             color: #8fa0b0;
-            max-width: 34rem;
-            margin: 0;
+            margin-top: .2rem;
         }}
         /* Afasta do card o bloco que traz o botão de entrada (o elemento
            logo após o markdown da capa), que sem isto encosta na borda. */
@@ -123,17 +160,20 @@ def render() -> None:
             .capa {{ padding: 2.6rem 1.5rem; min-height: 20rem; }}
             .capa .sigla {{ font-size: 3rem; }}
             .capa .titulo {{ font-size: 1.05rem; }}
+            .capa .metricas {{ grid-template-columns: repeat(2, 1fr); gap: 1rem; }}
         }}
         </style>
         <div class="capa">
             <p class="sigla">{SIGLA}</p>
             <div class="regua"></div>
             <p class="titulo">{TITULO}</p>
-            <p class="nota">
-                Energia frustrada por restrição operativa, preço horário do
-                submercado Nordeste e a rede de transmissão que atende aos
-                conjuntos — a partir dos dados abertos do ONS, da ANEEL e da CCEE.
-            </p>
+            <div class="metricas">
+                {"".join(
+                    f'<div class="metrica"><div class="valor">{valor}</div>'
+                    f'<div class="rotulo">{rotulo}</div></div>'
+                    for valor, rotulo in _metricas_painel()
+                )}
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
