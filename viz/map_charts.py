@@ -570,7 +570,7 @@ def ficha_conjunto_html(row, acumulado: dict | None, rotulo_periodo: str = "") -
         + _bloco_metodologias(acumulado, "impacto_financeiro_", "R$", 2, moeda=True)
         + "</div>"
         + f'<div style="font-family:{_FONTE_TEXTO};">'
-        + _bloco_documentos(row["documentos_associados"])
+        + _bloco_documentos(row.get("documentos_associados"))
         + "</div></div>"
     )
 
