@@ -1,15 +1,16 @@
 """Página do mapa de localização dos conjuntos eólicos do RN."""
 
 import streamlit as st
-import streamlit.components.v1 as components
+from streamlit_folium import st_folium
 
 from datetime import date
 
 from core import tema
+from core.agentes import separar_agentes
 from core.coff_cache import acumulado_do_ano
-from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas
+from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas, municipios_unicos
 from core.ons_rede import ler_linhas_rn, ler_subestacoes_rn
-from viz.map_charts import CAMADAS_PADRAO, build_map_html, df_para_key
+from viz.map_charts import CAMADAS_PADRAO, build_map_cacheable, df_para_key, ficha_conjunto_html
 from viz.mapa_estatico import gerar_png_mapa_cache
 
 _ROTULO_CAMADA = {
@@ -20,6 +21,8 @@ _ROTULO_CAMADA = {
     "linhas_conexao": "Linhas de conexão conjunto–SE",
     "cidades": "Cidades de referência",
 }
+
+_CHAVE_CONJUNTO_SELECIONADO = "_conjunto_selecionado"
 
 
 def _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_linhas, df_ses, camadas) -> None:
@@ -66,12 +69,37 @@ def _bloco_download_imagem(filtrado, usinas_filtradas, df_bays, df_cidades, df_l
             st.rerun()
 
 
-def _municipios_unicos(df) -> list[str]:
+def _agentes_unicos(df, coluna: str) -> list[str]:
     todos = set()
-    for valor in df["municipios"].dropna():
-        for municipio in valor.split(";"):
-            todos.add(municipio.strip())
+    for valor in df[coluna].dropna():
+        todos.update(separar_agentes(valor))
     return sorted(todos)
+
+
+def _filtrar_por_agente(df, coluna: str, selecionados: list[str]):
+    if not selecionados:
+        return df
+    return df[df[coluna].apply(lambda v: any(a in separar_agentes(v) for a in selecionados))]
+
+
+def _renderizar_ficha(conjunto_nome, df_conjuntos, df_acumulado, ano_acumulado) -> None:
+    """Card de detalhe do conjunto selecionado, na coluna à direita do mapa."""
+    if not conjunto_nome:
+        st.info("Clique num marcador de conjunto no mapa para ver a ficha de detalhe.")
+        return
+
+    linhas = df_conjuntos[df_conjuntos["conjunto"] == conjunto_nome]
+    if linhas.empty:
+        st.info("Conjunto fora do filtro atual — ajuste os filtros ou clique noutro marcador.")
+        return
+
+    row = linhas.iloc[0]
+    acumulado = None
+    if df_acumulado is not None and row.get("id_ons") in df_acumulado.index:
+        acumulado = df_acumulado.loc[row["id_ons"]].to_dict()
+
+    html = ficha_conjunto_html(row, acumulado, rotulo_periodo=f" em {ano_acumulado}")
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render() -> None:
@@ -106,9 +134,17 @@ def render() -> None:
 
     st.sidebar.markdown("#### Filtros")
     with st.sidebar.container(border=True):
-        municipios_disponiveis = _municipios_unicos(df_conjuntos)
+        municipios_disponiveis = municipios_unicos(df_conjuntos)
         municipios_selecionados = st.multiselect(
             "Município", municipios_disponiveis, placeholder="Todos"
+        )
+        proprietarios_disponiveis = _agentes_unicos(df_conjuntos, "agente_proprietario")
+        proprietarios_selecionados = st.multiselect(
+            "Agente Proprietário", proprietarios_disponiveis, placeholder="Todos"
+        )
+        operadores_disponiveis = _agentes_unicos(df_conjuntos, "agente_operador")
+        operadores_selecionados = st.multiselect(
+            "Agente Operador", operadores_disponiveis, placeholder="Todos"
         )
         busca = st.text_input("Buscar conjunto", placeholder="ex.: Acauã")
 
@@ -125,6 +161,8 @@ def render() -> None:
                 lambda m: any(sel in m for sel in municipios_selecionados)
             )
         ]
+    filtrado = _filtrar_por_agente(filtrado, "agente_proprietario", proprietarios_selecionados)
+    filtrado = _filtrar_por_agente(filtrado, "agente_operador", operadores_selecionados)
     if busca:
         filtrado = filtrado[filtrado["conjunto"].str.contains(busca, case=False, na=False)]
 
@@ -135,25 +173,43 @@ def render() -> None:
     c1.metric("Conjuntos", len(filtrado))
     c2.metric("Usinas", int(filtrado["qtd_usinas"].sum()))
     c3, c4 = st.sidebar.columns(2)
-    c3.metric("Municípios", len(_municipios_unicos(filtrado)))
+    c3.metric("Municípios", len(municipios_unicos(filtrado)))
     c4.metric("Capacidade", f"{filtrado['capacidade_mw'].sum():.0f} MW")
 
-    mapa_html = build_map_html(
-        df_para_key(filtrado),
-        df_para_key(usinas_filtradas),
-        df_para_key(df_bays),
-        df_para_key(df_cidades),
-        df_para_key(df_linhas),
-        df_para_key(df_ses),
-        tuple(sorted(camadas.items())),
-        altura=650,
-        acumulado_json=df_para_key(
-            df_acumulado.reset_index() if df_acumulado is not None else None
-        ),
-        rotulo_periodo=f" em {ano_acumulado}",
-        tema_escuro=tema.escuro(),
-    )
-    components.html(mapa_html, height=665, scrolling=False)
+    col_mapa, col_ficha = st.columns([2.2, 1])
+    with col_mapa:
+        fmap = build_map_cacheable(
+            df_para_key(filtrado),
+            df_para_key(usinas_filtradas),
+            df_para_key(df_bays),
+            df_para_key(df_cidades),
+            df_para_key(df_linhas),
+            df_para_key(df_ses),
+            tuple(sorted(camadas.items())),
+            acumulado_json=df_para_key(
+                df_acumulado.reset_index() if df_acumulado is not None else None
+            ),
+            rotulo_periodo=f" em {ano_acumulado}",
+            tema_escuro=tema.escuro(),
+        )
+        evento = st_folium(
+            fmap,
+            height=650,
+            use_container_width=True,
+            returned_objects=["last_object_clicked_tooltip"],
+            key="mapa_conjuntos",
+        )
+        clicado = evento.get("last_object_clicked_tooltip") if evento else None
+        if clicado:
+            st.session_state[_CHAVE_CONJUNTO_SELECIONADO] = clicado
+
+    with col_ficha:
+        _renderizar_ficha(
+            st.session_state.get(_CHAVE_CONJUNTO_SELECIONADO),
+            filtrado,
+            df_acumulado,
+            ano_acumulado,
+        )
 
     if meses_acumulados:
         primeiro, ultimo = meses_acumulados[0], meses_acumulados[-1]

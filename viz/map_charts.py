@@ -14,6 +14,7 @@ from shapely.geometry import shape
 
 from core.agentes import classe_css_logos, classe_logo, separar_agentes
 from core.documentos_ons import documentos_do_conjunto
+from core.formatos import numero_br as _numero_br
 from core.ons_coff import METODOLOGIA_PADRAO, METODOLOGIAS
 from core.tema import cor_tensao_tema, paleta as paleta_tema
 from core.ons_rede import (
@@ -457,13 +458,6 @@ def _ficha_linha_conexao_html(conjunto: str, nome_se: str, tensao) -> str:
     )
 
 
-def _numero_br(valor: float, casas: int = 2) -> str:
-    """Formata no padrão brasileiro: milhar com ponto, decimal com vírgula."""
-    inteiro, _, decimal = f"{valor:,.{casas}f}".partition(".")
-    inteiro = inteiro.replace(",", ".")
-    return f"{inteiro},{decimal}" if decimal else inteiro
-
-
 def _secao_titulo(texto: str) -> str:
     return (
         f'<div style="font-family:{_FONTE_TEXTO}; font-size:10px; text-transform:uppercase; '
@@ -517,9 +511,9 @@ def _bloco_metodologias(
     )
 
 
-def _bloco_documentos(codigo_ajustamento) -> str:
+def _bloco_documentos(codigos_associados) -> str:
     """Documentos normativos do ONS vinculados ao conjunto, como links."""
-    documentos = documentos_do_conjunto(codigo_ajustamento)
+    documentos = documentos_do_conjunto(codigos_associados)
     if not documentos:
         return ""
     itens = "".join(
@@ -530,6 +524,55 @@ def _bloco_documentos(codigo_ajustamento) -> str:
         for doc in documentos
     )
     return _secao_titulo("Documentos associados") + itens
+
+
+def ficha_conjunto_html(row, acumulado: dict | None, rotulo_periodo: str = "") -> str:
+    """Ficha de detalhe de um conjunto eólico, em HTML.
+
+    Usada pelo card do Streamlit ao lado do mapa (``ui/mapa.py``, via
+    ``st.markdown(unsafe_allow_html=True)``) — não é mais popup do Leaflet:
+    o balão do Folium, além de limitado em largura, cobria o próprio mapa ao
+    abrir, atrapalhando a leitura da posição geográfica.
+
+    ``row`` é uma linha de ``core.data_loader.load_conjuntos()``;
+    ``acumulado`` é a entrada do conjunto em
+    ``core.coff_cache.acumulado_do_ano`` (ou ``None``, sem dado ainda).
+    """
+    return (
+        '<div class="ficha-conjunto">'
+        f"<div style=\"font-family: Georgia, 'Times New Roman', serif; font-size:17px; "
+        f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
+        f'<div style="font-family:{_FONTE_TEXTO}; font-size:12.5px; color:{_cor("texto_ficha")}; '
+        'line-height:1.55; margin-bottom:4px;">'
+        f'{row["municipios"]}'
+        "</div>"
+        '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
+        + _bloco_agentes("Agente Proprietário", row["agente_proprietario"], _cor("conjuntos"))
+        + _bloco_agentes("Agente Operador", row["agente_operador"], _cor("subestacao"))
+        + '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
+        + f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:{_cor("texto_ficha")}; '
+        'line-height:1.75;">'
+        f'Capacidade instalada: <b>{_numero_br(row["capacidade_mw"])} MW</b><br>'
+        f'Aerogeradores: <b>{row["qtd_aerogeradores"]}</b><br>'
+        f'Ponto de conexão: <b>{_nome_subestacao(row["ponto_conexao"])}</b>'
+        + (
+            f'<br>Tensão de conexão: <b>{int(row["tensao_conexao_kv"])} kV</b>'
+            if pd.notna(row.get("tensao_conexao_kv"))
+            else ""
+        )
+        + "</div>"
+        + _secao_titulo(f"Energia frustrada acumulada{rotulo_periodo}")
+        + f'<div style="font-family:{_FONTE_TEXTO};">'
+        + _bloco_metodologias(acumulado, "energia_frustrada_", "MWh", 2)
+        + "</div>"
+        + _secao_titulo(f"Impacto financeiro acumulado{rotulo_periodo}")
+        + f'<div style="font-family:{_FONTE_TEXTO};">'
+        + _bloco_metodologias(acumulado, "impacto_financeiro_", "R$", 2, moeda=True)
+        + "</div>"
+        + f'<div style="font-family:{_FONTE_TEXTO};">'
+        + _bloco_documentos(row["documentos_associados"])
+        + "</div></div>"
+    )
 
 
 # Camadas do mapa que o usuário pode ligar/desligar no filtro da sidebar.
@@ -826,56 +869,10 @@ def build_map(
         if not camadas["conjuntos"]:
             break
         acumulado = (acumulado_coff or {}).get(row.get("id_ons"))
-        popup_html = (
-            '<div class="ficha-conjunto">'
-            f"<div style=\"font-family: Georgia, 'Times New Roman', serif; font-size:15px; "
-            f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
-            f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:{_cor("texto_ficha")}; '
-            'line-height:1.55; margin-bottom:4px;">'
-            f'{row["municipios"]}'
-            "</div>"
-            '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
-            + _bloco_agentes("Agente Proprietário", row["agente_proprietario"], _cor("conjuntos"))
-            + _bloco_agentes("Agente Operador", row["agente_operador"], _cor("subestacao"))
-            + '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
-            + f'<div style="font-family:{_FONTE_TEXTO}; font-size:11.5px; color:{_cor("texto_ficha")}; '
-            'line-height:1.7;">'
-            f'Capacidade instalada: <b>{_numero_br(row["capacidade_mw"])} MW</b><br>'
-            f'Aerogeradores: <b>{row["qtd_aerogeradores"]}</b><br>'
-            f'Ponto de conexão: <b>{_nome_subestacao(row["ponto_conexao"])}</b>'
-            + (
-                f'<br>Tensão de conexão: <b>{int(row["tensao_conexao_kv"])} kV</b>'
-                if pd.notna(row.get("tensao_conexao_kv"))
-                else ""
-            )
-            + "</div>"
-            + _secao_titulo(f"Energia frustrada acumulada{rotulo_periodo}")
-            + f'<div style="font-family:{_FONTE_TEXTO};">'
-            + _bloco_metodologias(acumulado, "energia_frustrada_", "MWh", 2)
-            + "</div>"
-            + _secao_titulo(f"Impacto financeiro acumulado{rotulo_periodo}")
-            + f'<div style="font-family:{_FONTE_TEXTO};">'
-            + _bloco_metodologias(acumulado, "impacto_financeiro_", "R$", 2, moeda=True)
-            + "</div>"
-            + f'<div style="font-family:{_FONTE_TEXTO};">'
-            + _bloco_documentos(row["ajustamento_operativo"])
-            + "</div></div>"
-        )
         folium.Marker(
             location=[row["latitude"], row["longitude"]],
             icon=_icone_customizado(ICONS_DIR / "logo_aero.jpg", _cor("conjuntos"), _TAMANHO_ICONE_CONJUNTO),
             tooltip=row["conjunto"],
-            popup=folium.Popup(
-                popup_html,
-                max_width=320,
-                # keepInView + autoPan mantêm o balão inteiro dentro do
-                # mapa; o padding evita que ele cole nas bordas / na barra
-                # de zoom. Depende do maxBoundsViscosity < 1 acima.
-                keepInView=True,
-                autoPan=True,
-                autoPanPaddingTopLeft=(50, 16),
-                autoPanPaddingBottomRight=(16, 16),
-            ),
             z_index_offset=1000,
         ).add_to(m)
 
@@ -983,3 +980,45 @@ def build_map_html(
     m.get_root().width = "100%"
     m.get_root().height = f"{altura}px"
     return m.get_root().render()
+
+
+def build_map_cacheable(
+    conjuntos_json: str,
+    usinas_json: str,
+    bays_json: str,
+    cidades_json: str,
+    linhas_json: str,
+    ses_json: str,
+    camadas_itens: tuple,
+    acumulado_json: str = "",
+    rotulo_periodo: str = "",
+    tema_escuro: bool = False,
+) -> folium.Map:
+    """Constrói um ``folium.Map`` a partir de DataFrames serializados como
+    JSON (mesma chave estável de ``build_map_html``), para o ``st_folium``.
+
+    **Sem cache** (nem ``@st.cache_data`` nem ``@st.cache_resource``), de
+    propósito: ``folium.Map.get_root().render()`` — chamado internamente
+    pelo ``st_folium`` a cada rerun — não é idempotente. Devolver o *mesmo*
+    objeto ``Map`` já renderizado numa rodada anterior (o que
+    ``@st.cache_resource`` faria) quebra o HTML na segunda renderização,
+    com ``ReferenceError: geo_json_<hash> is not defined`` no console —
+    variável que o Jinja2 do Folium só declara corretamente na primeira
+    passada. ``build_map()`` sozinho já é rápido (~1 s para os 54 conjuntos
+    + rede), então reconstruir a cada rerun é o caminho correto, não só o
+    mais simples.
+    """
+    def _ler(js: str) -> pd.DataFrame | None:
+        return pd.read_json(io.StringIO(js), orient="split") if js else None
+
+    return build_map(
+        _ler(conjuntos_json),
+        _ler(usinas_json),
+        _ler(bays_json),
+        _ler(cidades_json),
+        df_linhas=_ler(linhas_json),
+        df_ses=_ler(ses_json),
+        camadas=dict(camadas_itens),
+        acumulado_coff=_acumulado_para_dict(_ler(acumulado_json)),
+        rotulo_periodo=rotulo_periodo,
+    )

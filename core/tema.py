@@ -37,7 +37,10 @@ _PALETA = {
         "contorno": "#9aa5b1",
         "cidade": "#8a8f98",
         "linha_conexao": "#9aa5b1",
-        "mascara": "#ffffff",
+        # Slate da paleta do projeto (mesmo tom dos marcadores de conjunto),
+        # bem diluído sobre cinza claro — branco chapado destoava do resto
+        # do painel; a cor pura ficaria pesada demais contra o basemap claro.
+        "mascara": "#e4e8ec",
         "texto_ficha": "#3a444e",
         "titulo_ficha": "#2a3542",
         "rotulo_ficha": "#9aa5b1",
