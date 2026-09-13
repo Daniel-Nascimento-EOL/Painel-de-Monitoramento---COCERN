@@ -53,7 +53,8 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache_coff"
 # Versão do esquema/semântica do agregado. Incrementar sempre que mudar as
 # fórmulas das metodologias, o conjunto de colunas gravadas ou a forma de
 # aplicar o PLD — arquivos de versão anterior são descartados e recalculados.
-VERSAO_AGREGADO = 1
+# v2: adiciona a Metodologia [6] (energia_frustrada_6/impacto_financeiro_6).
+VERSAO_AGREGADO = 2
 
 # Um mês só é considerado definitivo depois desta folga a partir do seu
 # encerramento: o ONS ainda revisa medições e a CCEE reprocessa o PLD nos
@@ -61,8 +62,8 @@ VERSAO_AGREGADO = 1
 # (com o cache de sessão do Streamlit) e não vai para o disco.
 _DIAS_ATE_CONSOLIDAR = 15
 
-COLUNAS_ENERGIA = [f"energia_frustrada_{n}" for n in range(1, 6)]
-COLUNAS_IMPACTO = [f"impacto_financeiro_{n}" for n in range(1, 6)]
+COLUNAS_ENERGIA = [f"energia_frustrada_{n}" for n in range(1, 7)]
+COLUNAS_IMPACTO = [f"impacto_financeiro_{n}" for n in range(1, 7)]
 COLUNAS_AGREGADO = COLUNAS_ENERGIA + COLUNAS_IMPACTO
 
 
@@ -131,7 +132,7 @@ def _agregar_mes(ano: int, mes: int) -> pd.DataFrame:
     df = anexar_pld(calcular_metodologias(bruto), pld)
     preco = pd.to_numeric(df.get("pld_horario"), errors="coerce")
     tem_preco = preco.notna().any()
-    for n in range(1, 6):
+    for n in range(1, 7):
         df[f"impacto_financeiro_{n}"] = (
             df[f"energia_frustrada_{n}"] * preco if tem_preco else pd.NA
         )

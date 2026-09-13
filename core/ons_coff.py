@@ -154,6 +154,23 @@ def calcular_metodologias(df: pd.DataFrame) -> pd.DataFrame:
     ef4 = np.where(tem_limite, np.where(eh_rel, ef_rel, ef4_naorel), 0.0)
     ef5 = np.where(tem_limite, np.where(eh_rel, ef_rel, ef5_naorel), 0.0)
 
+    # Energia Frustrada [6]: geração não realizada apurada pelo próprio ONS
+    # (val_geracaonaorealizadaapurada) — o ONS passou a publicar essa coluna
+    # a partir de 01/01/2024; antes disso fica NaN, não estimada. É um valor
+    # médio de MW por amostra, como val_geracao/val_geracaoreferencia (mesmo
+    # gotcha de unidade do restante do módulo), daí o fator 0,5 h — validado
+    # comparando a magnitude do somatório com a Metodologia [1] em jan/2024
+    # (mesma ordem de grandeza só com o fator aplicado).
+    #
+    # Gotcha: o CSV do ONS anterior a 2024 não tem essa coluna (não é só
+    # NaN — a coluna inteira está ausente do arquivo), então o acesso
+    # direto quebra com KeyError nesses meses.
+    if "val_geracaonaorealizadaapurada" in df.columns:
+        tem_m6 = df["din_instante"] >= pd.Timestamp("2024-01-01")
+        ef6 = np.where(tem_m6, 0.5 * df["val_geracaonaorealizadaapurada"].fillna(0.0), np.nan)
+    else:
+        ef6 = np.full(len(df), np.nan)
+
     df["energia_frustrada_1"] = ef1
     df["energia_frustrada_2"] = ef2
     df["energia_frustrada_3"] = ef3
@@ -161,6 +178,7 @@ def calcular_metodologias(df: pd.DataFrame) -> pd.DataFrame:
     df["g_ref_calculada_2"] = g_ref_calc2
     df["energia_frustrada_4"] = ef4
     df["energia_frustrada_5"] = ef5
+    df["energia_frustrada_6"] = ef6
     return df
 
 
@@ -186,9 +204,37 @@ METODOLOGIAS = {
         "energia_frustrada_5",
         "Como [4], mas com a referência recalculada [2] (desvio absoluto) no caso não-REL.",
     ),
+    6: (
+        "energia_frustrada_6",
+        "Geração não realizada apurada pelo próprio ONS (val_geracaonaorealizadaapurada). "
+        "Disponível somente a partir de 01/01/2024.",
+    ),
 }
 
 
 def meses_do_ano_disponiveis(ano: int) -> list[tuple[int, int]]:
     """Meses de um ano já publicados pelo ONS, em ordem cronológica."""
     return sorted(m for m in meses_disponiveis() if m[0] == ano)
+
+
+def quebra_por_razao(df: pd.DataFrame) -> pd.DataFrame:
+    """Classificação do constrained-off por razão da restrição
+    (``cod_razaorestricao``: CNF, ENE, REL...), no estilo do Portal:
+    duração (horas), contagem de amostras e percentual do total.
+
+    Independe de metodologia — usa ``num_minutos_restricao`` (tempo de
+    restrição da amostra) como base de duração, presente desde o início da
+    série (2021), ao contrário da Metodologia [6] (só a partir de 2024).
+    """
+    colunas = ["cod_razaorestricao", "amostras", "horas", "pct_horas"]
+    if "cod_razaorestricao" not in df or df.empty:
+        return pd.DataFrame(columns=colunas)
+
+    minutos = df["num_minutos_restricao"] if "num_minutos_restricao" in df else pd.Series(dtype=float)
+    g = df.assign(_minutos=minutos).groupby("cod_razaorestricao", as_index=False).agg(
+        amostras=("cod_razaorestricao", "size"),
+        horas=("_minutos", lambda s: s.sum(min_count=1) / 60.0),
+    )
+    total_horas = g["horas"].sum()
+    g["pct_horas"] = (g["horas"] / total_horas * 100) if total_horas else float("nan")
+    return g.sort_values("horas", ascending=False).reset_index(drop=True)
