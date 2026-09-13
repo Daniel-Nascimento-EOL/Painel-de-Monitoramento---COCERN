@@ -6,7 +6,7 @@ from streamlit_folium import st_folium
 from datetime import date
 
 from core import tema
-from core.agentes import separar_agentes
+from core.agentes import classe_css_logos, separar_agentes
 from core.coff_cache import acumulado_do_ano
 from core.data_loader import load_bays, load_cidades, load_conjuntos, load_usinas, municipios_unicos
 from core.ons_rede import ler_linhas_rn, ler_subestacoes_rn
@@ -130,6 +130,20 @@ def render() -> None:
         df_acumulado, meses_acumulados = None, []
 
     st.markdown("## Mapa de Conjuntos Eólicos — Rio Grande do Norte")
+    st.markdown(
+        # O container global (app.py) limita a 1200px pra deixar as demais
+        # páginas confortáveis de ler; o mapa é a única que se beneficia de
+        # mais largura — sobrava área em branco nas laterais e o mapa saía
+        # pequeno em relação ao card de ficha ao lado.
+        "<style>.block-container { max-width: 1600px; }</style>",
+        unsafe_allow_html=True,
+    )
+    # As classes .logo-* das logomarcas de agente também precisam existir
+    # aqui, fora do iframe do mapa: a ficha do conjunto virou card desta
+    # página (ui/mapa.py), não popup dentro do HTML do Folium — declarar o
+    # CSS só lá dentro (viz/map_charts.py::build_map) não alcança o card.
+    css_logos, _ = classe_css_logos()
+    st.markdown(css_logos, unsafe_allow_html=True)
     st.divider()
 
     st.sidebar.markdown("#### Filtros")
@@ -176,7 +190,7 @@ def render() -> None:
     c3.metric("Municípios", len(municipios_unicos(filtrado)))
     c4.metric("Capacidade", f"{filtrado['capacidade_mw'].sum():.0f} MW")
 
-    col_mapa, col_ficha = st.columns([2.2, 1])
+    col_mapa, col_ficha = st.columns([2.6, 1])
     with col_mapa:
         fmap = build_map_cacheable(
             df_para_key(filtrado),
@@ -194,7 +208,7 @@ def render() -> None:
         )
         evento = st_folium(
             fmap,
-            height=650,
+            height=780,
             use_container_width=True,
             returned_objects=["last_object_clicked_tooltip"],
             key="mapa_conjuntos",
