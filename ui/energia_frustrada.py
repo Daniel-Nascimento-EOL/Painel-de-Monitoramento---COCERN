@@ -23,6 +23,7 @@ from core.ons_coff import (
     baixar_mes_rn,
     calcular_metodologias,
     meses_disponiveis,
+    quebra_por_razao,
 )
 from core.ons_rede import ler_linhas_rn, ler_subestacoes_rn
 from core.relatorio_dados import montar_relatorio
@@ -115,10 +116,6 @@ def _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
 
 def render() -> None:
     st.markdown("## Energia Frustrada — Constrained-off Eólico do RN")
-    st.caption(
-        "Constrained-off eólico dos dados abertos do ONS (atualizado 2x ao dia) "
-        "valorado pelo PLD horário do submercado Nordeste (CCEE)"
-    )
     st.divider()
 
     df_conjuntos = load_conjuntos()
@@ -176,17 +173,18 @@ def render() -> None:
         )
 
     total_mwh = df_calc[coluna_ef].sum()
-    c1, c2 = st.columns(2)
-    c1.metric("Energia frustrada no período", f"{total_mwh:,.0f} MWh".replace(",", "."))
-    if pld_disponivel:
-        total_financeiro = df_calc["impacto_financeiro"].sum()
-        c2.metric(
-            "Impacto financeiro no período",
-            f"R$ {total_financeiro:,.0f}".replace(",", "."),
-            help="Energia frustrada valorada pelo PLD horário do submercado Nordeste (CCEE).",
-        )
-    else:
-        c2.metric("Impacto financeiro no período", "indisponível")
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        c1.metric("Energia frustrada no período", f"{total_mwh:,.0f} MWh".replace(",", "."))
+        if pld_disponivel:
+            total_financeiro = df_calc["impacto_financeiro"].sum()
+            c2.metric(
+                "Impacto financeiro no período",
+                f"R$ {total_financeiro:,.0f}".replace(",", "."),
+                help="Energia frustrada valorada pelo PLD horário do submercado Nordeste (CCEE).",
+            )
+        else:
+            c2.metric("Impacto financeiro no período", "indisponível")
 
     st.divider()
 
@@ -211,21 +209,29 @@ def render() -> None:
     )
     st.plotly_chart(tema.aplicar_plotly(fig_serie), use_container_width=True)
 
-    _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
+    st.markdown("#### Classificação por motivo de restrição")
+    razoes = quebra_por_razao(df_calc)
+    if razoes.empty:
+        st.caption("Sem dados de razão da restrição para o período.")
+    else:
+        col_graf, col_tab = st.columns([1.4, 1])
+        with col_graf:
+            fig_razao = px.bar(
+                razoes, x="cod_razaorestricao", y="horas",
+                labels={"cod_razaorestricao": "Razão", "horas": "Horas em restrição"},
+                title="Duração por razão da restrição",
+            )
+            st.plotly_chart(tema.aplicar_plotly(fig_razao), use_container_width=True)
+        with col_tab:
+            st.dataframe(
+                razoes.rename(columns={
+                    "cod_razaorestricao": "Razão",
+                    "amostras": "Amostras",
+                    "horas": "Horas",
+                    "pct_horas": "% do total",
+                }).style.format({"Horas": "{:.1f}", "% do total": "{:.1f}%"}),
+                width="stretch",
+                hide_index=True,
+            )
 
-    with st.expander("Tabela detalhada"):
-        colunas_tabela = ["din_instante", "conjunto", "val_geracao", "val_geracaolimitada", coluna_ef]
-        renomeio = {
-            "din_instante": "Instante", "conjunto": "Conjunto",
-            "val_geracao": "Geração (MW)", "val_geracaolimitada": "Geração limitada (MW)",
-            coluna_ef: "Energia frustrada (MWh)",
-        }
-        if pld_disponivel:
-            colunas_tabela += ["pld_horario", "impacto_financeiro"]
-            renomeio["pld_horario"] = "PLD (R$/MWh)"
-            renomeio["impacto_financeiro"] = "Impacto financeiro (R$)"
-        st.dataframe(
-            df_calc[colunas_tabela].rename(columns=renomeio),
-            width="stretch",
-            hide_index=True,
-        )
+    _bloco_relatorio_pdf(df_conjuntos, conjuntos_selecionados, ano, mes, metodo)
