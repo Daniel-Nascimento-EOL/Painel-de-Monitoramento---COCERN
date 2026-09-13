@@ -154,9 +154,48 @@ def _grafico_historico(serie: pd.DataFrame, dias: int) -> go.Figure:
 
 def render() -> None:
     st.markdown("## Preço Horário do Dia — Submercado Nordeste")
-    st.caption(
-        "PLD (Preço de Liquidação das Diferenças) horário · dados abertos da CCEE · "
-        "mesma série usada para valorar o impacto financeiro do constrained-off"
+    st.markdown("**PLD - Preço de Liquidação das Diferenças horário**")
+    st.caption("Fonte: CCEE")
+    st.markdown(
+        """
+        <style>
+        @keyframes flash-up {
+            from { background: rgba(63, 125, 92, .35); }
+            to { background: transparent; }
+        }
+        @keyframes flash-down {
+            from { background: rgba(180, 83, 75, .35); }
+            to { background: transparent; }
+        }
+        .ticker-price { border-radius: 8px; padding: .1rem .3rem; }
+        .ticker-price.sobe { animation: flash-up 1.4s ease-out; }
+        .ticker-price.desce { animation: flash-down 1.4s ease-out; }
+        .ticker-tape {
+            overflow: hidden;
+            white-space: nowrap;
+            border-top: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            padding: .5rem 0;
+            margin: .6rem 0 1rem;
+        }
+        .ticker-tape .trilho {
+            display: inline-block;
+            animation: scroll-left 40s linear infinite;
+        }
+        .ticker-tape .chip {
+            display: inline-block;
+            margin-right: 1.6rem;
+            font-size: .82rem;
+            color: #3b5166;
+        }
+        .ticker-tape .chip b { color: #1f2937; }
+        @keyframes scroll-left {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
     st.divider()
 
@@ -226,17 +265,42 @@ def render() -> None:
     hora_max = int(dia.loc[dia["pld_horario"].idxmax(), "din_instante"].hour)
     hora_min = int(dia.loc[dia["pld_horario"].idxmin(), "din_instante"].hour)
 
+    # Flash de alta/baixa: compara com o preço em destaque do render anterior
+    # (a "animação" é um pulso de CSS por rerun, não um live-update real —
+    # o Streamlit não atualiza sozinho sem interação do usuário).
+    anterior_destaque = st.session_state.get("_pld_destaque_anterior")
+    if anterior_destaque is None or delta is None:
+        classe_flash = ""
+    else:
+        classe_flash = "sobe" if preco_agora >= anterior_destaque else "desce"
+    st.session_state["_pld_destaque_anterior"] = preco_agora
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        rotulo_destaque,
-        f"R$ {_reais(preco_agora)}",
-        delta=f"{_reais(delta)} vs. hora anterior" if delta is not None else None,
-        delta_color="inverse",
-        help="Preço de liquidação da energia no submercado Nordeste, em R$/MWh.",
-    )
+    with c1:
+        st.markdown(
+            f"""
+            <div class="ticker-price {classe_flash}">
+                <div style="font-size:.8rem; color:#6b7280;">{rotulo_destaque}</div>
+                <div style="font-size:1.6rem; font-weight:600; color:#1f2937;">
+                    R$ {_reais(preco_agora)}
+                </div>
+                {f'<div style="font-size:.8rem; color:#6b7280;">{_reais(delta)} vs. hora anterior</div>' if delta is not None else ''}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     c2.metric("Máxima do dia", f"R$ {_reais(maxima)}", delta=f"às {hora_max:02d}h", delta_color="off")
     c3.metric("Mínima do dia", f"R$ {_reais(minima)}", delta=f"às {hora_min:02d}h", delta_color="off")
     c4.metric("Média do dia", f"R$ {_reais(media)}")
+
+    chips = "".join(
+        f'<span class="chip">{h:02d}h <b>R$ {_reais(p, 0)}</b></span>'
+        for h, p in zip(dia["din_instante"].dt.hour, dia["pld_horario"])
+    )
+    st.markdown(
+        f'<div class="ticker-tape"><div class="trilho">{chips}{chips}</div></div>',
+        unsafe_allow_html=True,
+    )
 
     st.plotly_chart(tema.aplicar_plotly(_grafico_dia(dia, hora_ref)), use_container_width=True)
 
@@ -253,9 +317,3 @@ def render() -> None:
         "Linha: média diária do PLD horário. Faixa: mínima e máxima do dia. "
         "O piso e o teto do PLD são fixados anualmente pela ANEEL."
     )
-
-    with st.expander("Tabela horária do dia"):
-        tabela = dia.assign(
-            Hora=dia["din_instante"].dt.strftime("%H:00"),
-        )[["Hora", "pld_horario"]].rename(columns={"pld_horario": "PLD (R$/MWh)"})
-        st.dataframe(tabela, width="stretch", hide_index=True)
