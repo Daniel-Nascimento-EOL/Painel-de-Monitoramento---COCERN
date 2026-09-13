@@ -519,7 +519,7 @@ def _bloco_documentos(codigos_associados) -> str:
     itens = "".join(
         f'<div style="font-size:11.5px; line-height:1.7;">'
         f'<a href="{doc["url"]}" target="_blank" rel="noopener" '
-        f'style="color:#3b5166; text-decoration:underline;" title="{doc["titulo"]}">'
+        f'style="color:{_cor("conjuntos")}; text-decoration:underline;" title="{doc["titulo"]}">'
         f'{doc["codigo"]}</a></div>'
         for doc in documentos
     )
@@ -541,15 +541,15 @@ def ficha_conjunto_html(row, acumulado: dict | None, rotulo_periodo: str = "") -
     return (
         '<div class="ficha-conjunto">'
         f"<div style=\"font-family: Georgia, 'Times New Roman', serif; font-size:17px; "
-        f'font-weight:700; color:#1f2937; margin-bottom:6px;">{row["conjunto"]}</div>'
+        f'font-weight:700; color:{_cor("titulo_ficha")}; margin-bottom:6px;">{row["conjunto"]}</div>'
         f'<div style="font-family:{_FONTE_TEXTO}; font-size:12.5px; color:{_cor("texto_ficha")}; '
         'line-height:1.55; margin-bottom:4px;">'
         f'{row["municipios"]}'
         "</div>"
-        '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
+        f'<div style="border-top:1px solid {_cor("borda_legenda")}; margin:8px 0;"></div>'
         + _bloco_agentes("Agente Proprietário", row["agente_proprietario"], _cor("conjuntos"))
         + _bloco_agentes("Agente Operador", row["agente_operador"], _cor("subestacao"))
-        + '<div style="border-top:1px solid #e7e9ec; margin:8px 0;"></div>'
+        + f'<div style="border-top:1px solid {_cor("borda_legenda")}; margin:8px 0;"></div>'
         + f'<div style="font-family:{_FONTE_TEXTO}; font-size:12px; color:{_cor("texto_ficha")}; '
         'line-height:1.75;">'
         f'Capacidade instalada: <b>{_numero_br(row["capacidade_mw"])} MW</b><br>'

@@ -54,7 +54,10 @@ _PALETA = {
         "usinas": "#e0975f",
         "subestacao": "#9aabb5",
         "contorno": "#5c6874",
-        "cidade": "#8b939c",
+        # Branco quase puro: cinza médio (#8b939c) ficava ilegível sobre o
+        # basemap escuro sem depender do halo do satélite (que só liga com
+        # aquela camada ativa) — pedido explícito do usuário.
+        "cidade": "#e8ecf0",
         "linha_conexao": "#6d7783",
         "mascara": "#11161d",
         "texto_ficha": "#c8d2dc",
