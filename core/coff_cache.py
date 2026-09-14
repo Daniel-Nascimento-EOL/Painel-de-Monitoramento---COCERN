@@ -16,8 +16,13 @@ mês também é. Este módulo persiste esse agregado em Parquet
 conjunto, com as 5 metodologias em MWh e o impacto financeiro correspondente
 em R$ — cerca de 30 KB por ano, versionável no repositório.
 
-O que **não** é persistido: os dados semi-horários brutos (80 mil linhas/mês)
-e os meses ainda sujeitos a revisão (ver ``_DIAS_ATE_CONSOLIDAR``).
+O que **não** é persistido em disco: os dados semi-horários brutos (80 mil
+linhas/mês) e o mês corrente, ainda em curso — esse é sempre recalculado
+(decisão do usuário, 2026-09-14: sem esperar o mês fechar, consultar e
+somar o que o ONS já publicou, dia a dia, mesmo que o mês ainda não tenha
+terminado). O `@st.cache_data(ttl=6h)` garante que, assim que o ONS
+publicar dados de um novo dia (2x/dia), o agregado do mês corrente
+recalcula sozinho na consulta seguinte.
 
 Por que gravar o impacto financeiro junto, e não só os MWh
 -----------------------------------------------------------
@@ -56,12 +61,6 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache_coff"
 # v2: adiciona a Metodologia [6] (energia_frustrada_6/impacto_financeiro_6).
 VERSAO_AGREGADO = 2
 
-# Um mês só é considerado definitivo depois desta folga a partir do seu
-# encerramento: o ONS ainda revisa medições e a CCEE reprocessa o PLD nos
-# primeiros dias do mês seguinte. Antes disso o mês é recalculado ao vivo
-# (com o cache de sessão do Streamlit) e não vai para o disco.
-_DIAS_ATE_CONSOLIDAR = 15
-
 COLUNAS_ENERGIA = [f"energia_frustrada_{n}" for n in range(1, 7)]
 COLUNAS_IMPACTO = [f"impacto_financeiro_{n}" for n in range(1, 7)]
 COLUNAS_AGREGADO = COLUNAS_ENERGIA + COLUNAS_IMPACTO
@@ -72,9 +71,12 @@ def _fim_do_mes(ano: int, mes: int) -> date:
 
 
 def mes_consolidado(ano: int, mes: int, hoje: date | None = None) -> bool:
-    """Indica se o mês já pode ser considerado fechado e persistido."""
+    """Indica se o mês civil já fechou. Mês fechado: agregado vem do Parquet
+    (imutável, cabe persistir). Mês corrente: sempre recalculado — a cada
+    ``ttl`` do cache de sessão, soma de novo o que o ONS já publicou até
+    aquele momento (o CSV do mês corrente é atualizado 2x/dia)."""
     hoje = hoje or date.today()
-    return (hoje - _fim_do_mes(ano, mes)).days >= _DIAS_ATE_CONSOLIDAR
+    return hoje > _fim_do_mes(ano, mes)
 
 
 def _caminho(ano: int, mes: int) -> Path:
@@ -114,6 +116,10 @@ def _agregar_mes(ano: int, mes: int) -> pd.DataFrame:
     """Baixa o mês do ONS, calcula as metodologias, aplica o PLD horário e
     agrega por conjunto (``id_ons``).
 
+    Para o mês corrente, ``baixar_mes_rn`` já devolve só o que o ONS
+    publicou até agora (o CSV cresce dia a dia) — nenhum corte adicional é
+    necessário aqui.
+
     O impacto financeiro é somado hora a hora antes da agregação; quando o
     PLD do período não está disponível, as colunas de impacto ficam nulas e
     apenas a energia em MWh é reportada.
@@ -143,8 +149,9 @@ def _agregar_mes(ano: int, mes: int) -> pd.DataFrame:
 def agregado_do_mes(ano: int, mes: int) -> pd.DataFrame:
     """Agregado por conjunto de um mês, servido do disco quando possível.
 
-    Mês consolidado: lê o Parquet; se não houver (ou for de versão anterior),
-    calcula e grava. Mês ainda em revisão: recalcula, sem persistir.
+    Mês fechado: lê o Parquet; se não houver (ou for de versão anterior),
+    calcula e grava — fica definitivo. Mês corrente: recalcula a cada
+    ``ttl`` (6h) com o que o ONS já publicou até então, sem persistir.
     """
     if mes_consolidado(ano, mes):
         do_disco = _ler_cache(ano, mes)
@@ -174,11 +181,11 @@ def acumulado_por_conjunto(
     ``id_ons`` com ``energia_frustrada_1..5`` (MWh) e
     ``impacto_financeiro_1..5`` (R$).
 
-    ``somente_consolidados`` restringe a soma aos meses já persistidos em
-    disco, evitando baixar ao vivo o mês corrente e o recém-encerrado (que
-    custam dezenas de segundos). É o modo usado pela ficha do mapa, onde o
-    número serve de panorama; a página Energia Frustrada continua mostrando
-    o mês corrente ao vivo.
+    ``somente_consolidados=True`` restringe a soma aos meses já fechados
+    (persistidos em disco), pulando o download ao vivo do mês corrente —
+    opção mantida para quem prefere não pagar esse custo, mas a ficha do
+    mapa usa ``False`` por padrão: inclui o mês corrente, recalculado a
+    cada ``ttl`` de ``agregado_do_mes`` conforme o ONS publica dados novos.
 
     Meses cujo download falhar são ignorados, para que uma indisponibilidade
     pontual do ONS não derrube o painel inteiro. O segundo elemento da tupla

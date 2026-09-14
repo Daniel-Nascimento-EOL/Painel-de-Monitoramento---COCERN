@@ -119,12 +119,15 @@ def render() -> None:
         df_ses = None
 
     # Acumulado de constrained-off do ano corrente, exibido na ficha de cada
-    # conjunto. Servido do cache em disco (core/coff_cache.py); uma falha do
-    # ONS/CCEE apenas deixa a ficha sem os números, sem derrubar o mapa.
+    # conjunto. Servido do cache em disco pros meses fechados e recalculado
+    # ao vivo pro mês corrente (core/coff_cache.py) — inclui sempre o dado
+    # mais recente publicado pelo ONS, mesmo dentro do mês em curso. Uma
+    # falha do ONS/CCEE apenas deixa a ficha sem os números, sem derrubar o
+    # mapa.
     ano_acumulado = date.today().year
     try:
         df_acumulado, meses_acumulados = acumulado_do_ano(
-            ano_acumulado, somente_consolidados=True
+            ano_acumulado, somente_consolidados=False
         )
     except Exception:
         df_acumulado, meses_acumulados = None, []

@@ -185,29 +185,27 @@ def calcular_metodologias(df: pd.DataFrame) -> pd.DataFrame:
 METODOLOGIAS = {
     1: (
         "energia_frustrada_1",
-        "Referência simples: 0,5·(geração de referência − geração limitada), quando a referência supera o limite. "
-        "Validada contra o estudo de referência do cliente.",
+        "Metodologia de referência.",
     ),
     2: (
         "energia_frustrada_2",
-        "Teto pela disponibilidade: usa min(referência, disponibilidade) como geração hipotética.",
+        "Metodologia alternativa 2.",
     ),
     3: (
         "energia_frustrada_3",
-        "Como [2], mas só conta quando a geração real ficou de fato presa ao limite (±5 MW / 5%).",
+        "Metodologia alternativa 3.",
     ),
     4: (
         "energia_frustrada_4",
-        "Usa a geração de referência final do ONS quando a razão é REL; senão, a referência recalculada [1].",
+        "Metodologia alternativa 4.",
     ),
     5: (
         "energia_frustrada_5",
-        "Como [4], mas com a referência recalculada [2] (desvio absoluto) no caso não-REL.",
+        "Metodologia alternativa 5.",
     ),
     6: (
         "energia_frustrada_6",
-        "Geração não realizada apurada pelo próprio ONS (val_geracaonaorealizadaapurada). "
-        "Disponível somente a partir de 01/01/2024.",
+        "Geração não realizada apurada pelo próprio ONS. Disponível somente a partir de 01/01/2024.",
     ),
 }
 

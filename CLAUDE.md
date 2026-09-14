@@ -512,15 +512,21 @@ Community Cloud).
 Como o CSV de um mês fechado é imutável, o **agregado por conjunto** daquele
 mês também é. Fica persistido em `data/cache_coff/coff_{ano}_{mes:02d}.parquet`
 (54 linhas/mês, ~9 KB, versionado no repositório). Não são persistidos os
-dados semi-horários brutos nem os meses ainda em revisão.
+dados semi-horários brutos nem o mês corrente, ainda em curso.
 
-- **`_DIAS_ATE_CONSOLIDAR = 15`**: um mês só vai para o disco 15 dias após
-  encerrar — o ONS revisa medições e a CCEE reprocessa o PLD nesse intervalo.
-  Antes disso é recalculado ao vivo (cache de sessão), sem gravar.
-- **`somente_consolidados=True`** (usado pela ficha do mapa) restringe a soma
-  ao que está em disco: **0,8 s** contra **65 s** quando o mês corrente e o
-  recém-encerrado entram ao vivo. A página Energia Frustrada segue mostrando
-  o mês corrente ao vivo.
+- **`mes_consolidado()`**: um mês vai para o disco assim que o mês civil
+  seguinte começa — sem folga extra de revisão (decisão do usuário,
+  2026-09-14: preferiu sempre consultar e calcular com o dado mais recente
+  disponível, mesmo que o ONS/CCEE ainda possa revisá-lo depois). Se uma
+  revisão de dado histórico exigir recálculo, apagar o Parquet do mês
+  afetado força o recálculo (`VERSAO_AGREGADO` só cobre mudança de fórmula).
+- **Mês corrente sempre incluído, dia a dia** (mesma decisão de
+  2026-09-14): a ficha do mapa passou a chamar `acumulado_do_ano(...,
+  somente_consolidados=False)` — o mês em curso entra no acumulado com o
+  que o ONS já publicou, e `agregado_do_mes` (cache de sessão, `ttl=6h`)
+  recalcula sozinho conforme o CSV do mês cresce (o ONS atualiza 2x/dia).
+  `somente_consolidados=True` continua existindo para quem preferir pular
+  esse download ao vivo, mas não é mais o padrão.
 - **Por que gravar o impacto financeiro junto, e não só os MWh**: o impacto
   tem de ser somado hora a hora (`energia × PLD daquela hora`). A energia
   frustrada se concentra nas horas de PLD baixo, então recompor depois pelo
