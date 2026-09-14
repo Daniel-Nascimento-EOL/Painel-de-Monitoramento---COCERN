@@ -10,6 +10,9 @@ Ontem / Hoje / Amanhã conforme a cobertura da série.
 """
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+_FUSO_NE = ZoneInfo("America/Recife")
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -199,7 +202,7 @@ def render() -> None:
     )
     st.divider()
 
-    agora = datetime.now()
+    agora = datetime.now(_FUSO_NE)
     anos = tuple(sorted({agora.year - 1, agora.year}))
     serie = _serie_nordeste(anos)
 
@@ -302,7 +305,7 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
-    st.plotly_chart(tema.aplicar_plotly(_grafico_dia(dia, hora_ref)), use_container_width=True)
+    st.plotly_chart(tema.aplicar_plotly(_grafico_dia(dia, hora_ref)), use_container_width=True, theme=None)
 
     st.divider()
     st.markdown("#### Evolução recente")
@@ -312,7 +315,7 @@ def render() -> None:
         format_func=lambda d: f"{d} dias",
         label_visibility="collapsed",
     )
-    st.plotly_chart(tema.aplicar_plotly(_grafico_historico(serie, janela)), use_container_width=True)
+    st.plotly_chart(tema.aplicar_plotly(_grafico_historico(serie, janela)), use_container_width=True, theme=None)
     st.caption(
         "Linha: média diária do PLD horário. Faixa: mínima e máxima do dia. "
         "O piso e o teto do PLD são fixados anualmente pela ANEEL."
