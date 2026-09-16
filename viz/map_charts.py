@@ -61,8 +61,8 @@ def _cor(nome: str) -> str:
 # Ícone do marcador de conjunto — tamanho fixo (sem proporcionalidade à qtd. de
 # usinas). Reduzido 40% (24 -> 14 px) a pedido do usuário: no tamanho anterior os
 # marcadores de conjunto poluíam visualmente os de subestação e dificultavam
-# localizar cada conjunto.
-_TAMANHO_ICONE_CONJUNTO = 14
+# localizar cada conjunto. Depois aumentado 20% (14 -> 17 px).
+_TAMANHO_ICONE_CONJUNTO = 17
 
 # Altura máxima do conteúdo da ficha do conjunto. Com as metodologias
 # secundárias recolhidas a ficha cabe inteira nesta altura; ao expandi-las, o
