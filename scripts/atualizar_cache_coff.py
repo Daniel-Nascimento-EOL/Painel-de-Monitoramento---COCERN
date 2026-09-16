@@ -31,6 +31,8 @@ Os arquivos gerados em ``data/cache_coff/`` são versionados no repositório.
 import sys
 from pathlib import Path
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.coff_cache import (  # noqa: E402
@@ -41,6 +43,18 @@ from core.coff_cache import (  # noqa: E402
     mes_consolidado,
 )
 from core.ons_coff import meses_disponiveis  # noqa: E402
+
+
+def _e_404(erro: Exception) -> bool:
+    """``meses_disponiveis()`` assume que todo mês desde 2021-01 tem CSV no
+    ONS, mas alguns (ex.: mai–set/2021, antes do RN ter conjunto reportado)
+    nunca existiram — 404 permanente, não uma falha transitória. Não deve
+    contar como falha do workflow nem derrubar seu exit code."""
+    return (
+        isinstance(erro, requests.HTTPError)
+        and erro.response is not None
+        and erro.response.status_code == 404
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -57,7 +71,7 @@ def main(argv: list[str]) -> int:
         print("Nenhum mês consolidado a processar.")
         return 0
 
-    gravados = inalterados = falhas = 0
+    gravados = inalterados = ausentes = falhas = 0
     for ano, mes in meses:
         existente = _ler_cache(ano, mes)
         if existente is not None and not forcar_tudo:
@@ -66,8 +80,12 @@ def main(argv: list[str]) -> int:
         try:
             agregado = _agregar_mes(ano, mes)
         except Exception as erro:  # noqa: BLE001 — relata e segue para o mês seguinte
-            print(f"FALHA {ano}-{mes:02d}: {type(erro).__name__}: {erro}", file=sys.stderr)
-            falhas += 1
+            if _e_404(erro):
+                print(f"--   {ano}-{mes:02d} sem CSV publicado pelo ONS (404)")
+                ausentes += 1
+            else:
+                print(f"FALHA {ano}-{mes:02d}: {type(erro).__name__}: {erro}", file=sys.stderr)
+                falhas += 1
             continue
         if agregado.empty:
             print(f"--   {ano}-{mes:02d} sem dados do RN")
@@ -85,7 +103,10 @@ def main(argv: list[str]) -> int:
             f"{agregado['energia_frustrada_1'].sum():,.0f} MWh [1], {tamanho:.0f} KB"
         )
 
-    print(f"\n{gravados} mês(es) gravado(s), {inalterados} sem mudança, {falhas} falha(s).")
+    print(
+        f"\n{gravados} mês(es) gravado(s), {inalterados} sem mudança, "
+        f"{ausentes} sem CSV no ONS, {falhas} falha(s)."
+    )
     return 1 if falhas else 0
 
 
