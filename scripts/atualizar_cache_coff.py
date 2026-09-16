@@ -2,14 +2,28 @@
 
 Uso::
 
-    python scripts/atualizar_cache_coff.py            # todos os meses consolidados
-    python scripts/atualizar_cache_coff.py 2026       # apenas um ano
+    python scripts/atualizar_cache_coff.py                  # meses ainda sem cache
+    python scripts/atualizar_cache_coff.py 2026              # idem, restrito a um ano
+    python scripts/atualizar_cache_coff.py --forcar-tudo     # recalcula TODO mês consolidado
 
 O painel preenche esse cache sozinho conforme é usado (ver
 ``core/coff_cache.py``); este script apenas antecipa o trabalho, para que um
 deploy já suba com os Parquet prontos e o primeiro acesso seja imediato.
-Rodar após o fechamento de cada mês, e sempre que ``VERSAO_AGREGADO`` for
-incrementada — nesse caso os arquivos antigos são regravados.
+
+``--forcar-tudo`` existe porque o CSV de um mês "fechado" não é
+necessariamente imutável na prática: um agente pode subir dado atrasado no
+SAGER do ONS depois que o mês já virou Parquet, e o painel nunca mais
+rebaixaria esse mês sozinho (``agregado_do_mes`` só recalcula o mês
+corrente). Esse modo ignora o cache existente, recalcula cada mês a partir
+do CSV atual do ONS e só regrava/relata o Parquet cujo conteúdo realmente
+mudou — a maioria dos meses antigos não muda, então o commit resultante
+tende a ficar pequeno mesmo varrendo o histórico inteiro. É o que o workflow
+``.github/workflows/atualizar-coff.yml`` roda 2x ao dia, acompanhando a
+publicação do ONS (ver ``core/ons_coff.py``).
+
+Sem a flag, o script só preenche o que falta (comportamento original) —
+rodar após o fechamento de cada mês, e sempre que ``VERSAO_AGREGADO`` for
+incrementada (arquivos de versão antiga não contam como "já em cache").
 
 Os arquivos gerados em ``data/cache_coff/`` são versionados no repositório.
 """
@@ -30,7 +44,10 @@ from core.ons_coff import meses_disponiveis  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
-    ano_alvo = int(argv[0]) if argv else None
+    forcar_tudo = "--forcar-tudo" in argv
+    resto = [a for a in argv if a != "--forcar-tudo"]
+    ano_alvo = int(resto[0]) if resto else None
+
     meses = [
         (ano, mes)
         for ano, mes in sorted(meses_disponiveis())
@@ -40,9 +57,10 @@ def main(argv: list[str]) -> int:
         print("Nenhum mês consolidado a processar.")
         return 0
 
-    gravados = falhas = 0
+    gravados = inalterados = falhas = 0
     for ano, mes in meses:
-        if _ler_cache(ano, mes) is not None:
+        existente = _ler_cache(ano, mes)
+        if existente is not None and not forcar_tudo:
             print(f"--   {ano}-{mes:02d} já em cache")
             continue
         try:
@@ -54,15 +72,20 @@ def main(argv: list[str]) -> int:
         if agregado.empty:
             print(f"--   {ano}-{mes:02d} sem dados do RN")
             continue
+        if existente is not None and agregado.equals(existente):
+            inalterados += 1
+            continue
+        mudou_revisao = existente is not None and not agregado.equals(existente)
         _gravar_cache(ano, mes, agregado)
         gravados += 1
         tamanho = _caminho(ano, mes).stat().st_size / 1024
+        marca = "REV " if mudou_revisao else "OK  "
         print(
-            f"OK   {ano}-{mes:02d}: {len(agregado)} conjuntos, "
+            f"{marca} {ano}-{mes:02d}: {len(agregado)} conjuntos, "
             f"{agregado['energia_frustrada_1'].sum():,.0f} MWh [1], {tamanho:.0f} KB"
         )
 
-    print(f"\n{gravados} mês(es) gravado(s), {falhas} falha(s).")
+    print(f"\n{gravados} mês(es) gravado(s), {inalterados} sem mudança, {falhas} falha(s).")
     return 1 if falhas else 0
 
 

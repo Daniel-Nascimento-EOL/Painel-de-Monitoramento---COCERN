@@ -1,0 +1,51 @@
+name: Atualizar cache de constrained-off
+
+# Mantém data/cache_coff/*.parquet fiel ao que o ONS publica.
+#
+# Por que existe: o Parquet de um mês "fechado" (core/coff_cache.py) é
+# tratado como imutável, mas na prática não é — um agente pode subir dado
+# atrasado no SAGER do ONS depois que o mês já foi consolidado, e nada no
+# painel detectaria essa revisão sozinho. Esta rotina recalcula todo mês
+# consolidado a partir do CSV atual do ONS e só regrava/commita o(s) mês(es)
+# cujo agregado realmente mudou (scripts/atualizar_cache_coff.py --forcar-tudo).
+#
+# Frequência 2x/dia acompanha a publicação do ONS (12h e 19h, ver
+# core/ons_coff.py).
+
+on:
+  schedule:
+    # 15:00 e 22:00 UTC = 12:00 e 19:00 em Brasília.
+    - cron: "0 15 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Instalar dependências
+        run: pip install pandas numpy requests httpx pyarrow streamlit
+
+      - name: Recalcular cache do COFF (histórico completo)
+        run: python scripts/atualizar_cache_coff.py --forcar-tudo
+
+      - name: Commitar se houver mudança
+        run: |
+          if git diff --quiet -- data/cache_coff/; then
+            echo "Cache já estava atualizado — nada a commitar."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/cache_coff/
+          git commit -m "chore: atualiza cache do COFF com revisões do ONS"
+          git push
