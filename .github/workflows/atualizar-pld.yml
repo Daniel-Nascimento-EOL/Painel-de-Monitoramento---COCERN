@@ -14,8 +14,8 @@ name: Atualizar série de PLD
 
 on:
   schedule:
-    # Toda segunda-feira às 09:00 UTC (06:00 em Brasília).
-    - cron: "0 9 * * 1"
+    # Todo dia às 09:00 UTC (06:00 em Brasília).
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
