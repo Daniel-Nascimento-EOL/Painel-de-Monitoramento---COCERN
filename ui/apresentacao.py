@@ -56,7 +56,7 @@ def voltar() -> None:
 
 
 def _metricas_painel() -> list[tuple[str, str]]:
-    """(valor formatado, rótulo) das 6 métricas gerais exibidas na capa."""
+    """(valor formatado, rótulo) das 7 métricas gerais exibidas na capa."""
     df = load_conjuntos()
     proprietarios: set[str] = set()
     for valor in df["agente_proprietario"].dropna():
@@ -66,6 +66,7 @@ def _metricas_painel() -> list[tuple[str, str]]:
         operadores.update(separar_agentes(valor))
 
     return [
+        (str(len(df)), "Conjuntos eólicos"),
         (f"{numero_br(df['capacidade_mw'].sum(), 0)} MW", "Capacidade instalada"),
         (numero_br(int(df["qtd_usinas"].sum()), 0), "Usinas"),
         (numero_br(int(df["qtd_aerogeradores"].sum()), 0), "Aerogeradores"),
@@ -134,7 +135,7 @@ def render() -> None:
         }}
         .capa .metricas {{
             display: grid;
-            grid-template-columns: repeat(6, 1fr);
+            grid-template-columns: repeat(7, 1fr);
             gap: 1.4rem;
             max-width: 44rem;
             margin-top: 1.7rem;
